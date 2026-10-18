@@ -42,7 +42,7 @@ class BrowserActivity : ComponentActivity() {
     private lateinit var filter: WebFilter
 
     private var address by mutableStateOf("")
-    private var progress by mutableIntStateOf(100)
+    private var loadProgress by mutableIntStateOf(100)
     private var canGoBack by mutableStateOf(false)
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -89,7 +89,7 @@ class BrowserActivity : ComponentActivity() {
         }
         web.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
-                progress = newProgress
+                loadProgress = newProgress
             }
         }
 
@@ -146,8 +146,8 @@ class BrowserActivity : ComponentActivity() {
                     IconTextButton("⌂") { showHome() }
                 }
             }
-            if (progress < 100) {
-                LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth())
+            if (loadProgress < 100) {
+                LinearProgressIndicator(progress = { loadProgress / 100f }, modifier = Modifier.fillMaxWidth())
             }
             AndroidView(factory = { web }, modifier = Modifier.weight(1f).fillMaxWidth())
         }
