@@ -8,10 +8,23 @@ android {
     namespace = "com.meni.whitelistfilter"
     compileSdk = 35
 
-    // ב-GitHub Actions משתמשים ב-NDK שכבר מותקן במכונה. ב-Android Studio — ברירת המחדל.
+    // ב-GitHub Actions משתמשים ב-NDK שכבר מותקן במכונה (עם מספר הגרסה שלו).
+    // ב-Android Studio — ברירת המחדל.
     (System.getenv("ANDROID_NDK_HOME") ?: System.getenv("ANDROID_NDK_LATEST_HOME"))
-        ?.takeIf { it.isNotBlank() && file(it).exists() }
-        ?.let { ndkPath = it }
+        ?.takeIf { it.isNotBlank() }
+        ?.let { java.io.File(it) }
+        ?.let { dir ->
+            val props = java.io.File(dir, "source.properties")
+            val revision = if (props.exists()) {
+                props.readLines()
+                    .firstOrNull { it.trim().startsWith("Pkg.Revision") }
+                    ?.substringAfter("=")?.trim()
+            } else null
+            if (revision != null) {
+                ndkPath = dir.absolutePath
+                ndkVersion = revision
+            }
+        }
 
     defaultConfig {
         applicationId = "com.meni.whitelistfilter"
