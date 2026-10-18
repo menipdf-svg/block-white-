@@ -35,8 +35,8 @@ android {
         applicationId = "com.meni.whitelistfilter"
         minSdk = 29
         targetSdk = 35
-        versionCode = 6
-        versionName = "3.3"
+        versionCode = 7
+        versionName = "3.4"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -99,7 +99,12 @@ val modelFiles = mapOf(
     "efficientdet_lite0.tflite" to
         "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/latest/efficientdet_lite0.tflite",
     "efficientnet_lite0.tflite" to
-        "https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/int8/latest/efficientnet_lite0.tflite"
+        "https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/int8/latest/efficientnet_lite0.tflite",
+    "blaze_face_short_range.tflite" to
+        "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite",
+    // מודל מגדר: Age-Gender_Estimation_TF-Android של Shubham Panchal, רישיון MIT
+    "gender.tflite" to
+        "https://raw.githubusercontent.com/shubham0204/Age-Gender_Estimation_TF-Android/48365bc1a541f3ac47b08bf85537849c5fc323e9/app/src/main/assets/model_gender_nonq.tflite"
 )
 
 val downloadModels by tasks.registering {
@@ -137,4 +142,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // מודל AI מקומי לזיהוי תוכן בתמונות
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
+    // הרצת מודל המגדר
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
 }

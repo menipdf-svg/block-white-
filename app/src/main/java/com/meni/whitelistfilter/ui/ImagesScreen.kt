@@ -18,6 +18,7 @@ import com.meni.whitelistfilter.image.ImageCategory
 import com.meni.whitelistfilter.image.ImageFilterSettings
 import com.meni.whitelistfilter.image.ImageJudge
 import com.meni.whitelistfilter.image.Sensitivity
+import com.meni.whitelistfilter.image.WomenLevel
 
 @Composable
 fun ImagesScreen(onBrowserDomains: () -> Unit) {
@@ -78,6 +79,43 @@ fun ImagesScreen(onBrowserDomains: () -> Unit) {
                     Spacer(Modifier.width(12.dp))
                     Text(cat.title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                     Checkbox(checked = cat in cfg.categories, onCheckedChange = { ImageFilterSettings.toggleCategory(cat) })
+                }
+            }
+        }
+
+        item { SectionTitle("👩 נשים") }
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(vertical = 8.dp)) {
+                    WomenLevel.entries.forEach { level ->
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clickable { ImageFilterSettings.update { it.copy(women = level) } }
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = cfg.women == level,
+                                onClick = { ImageFilterSettings.update { it.copy(women = level) } }
+                            )
+                            Column(Modifier.weight(1f)) {
+                                Text(level.title, style = MaterialTheme.typography.bodyLarge)
+                                Text(level.desc, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                    if (cfg.women != WomenLevel.OFF && ImageCategory.PEOPLE in cfg.categories) {
+                        Text(
+                            "\"אנשים\" מסומן למעלה, אז כל התמונות של אנשים מטושטשות בכל מקרה — כולל נשים.",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        )
+                    }
+                    Text(
+                        "הזיהוי מבוסס על הפנים ועל הלבוש. כשלא רואים פנים (מהגב, מרחוק) הוא פחות מדויק.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
                 }
             }
         }

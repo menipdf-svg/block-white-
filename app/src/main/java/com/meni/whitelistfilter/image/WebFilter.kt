@@ -66,7 +66,7 @@ class WebFilter(context: Context, private val userAgent: String) {
         FilterState.request(uid, domain, true, true)
 
         val cfg = ImageFilterSettings.config.value
-        if (!cfg.enabled || cfg.categories.isEmpty()) return null
+        if (!cfg.active) return null
         if (!request.method.equals("GET", true) || !looksLikeImage(request)) return null
 
         return try {
@@ -175,7 +175,7 @@ class WebFilter(context: Context, private val userAgent: String) {
 
         try {
             val found = try {
-                ImageJudge.find(ctx, bmp, cfg.categories, cfg.sensitivity.threshold)
+                ImageJudge.find(ctx, bmp, cfg)
             } catch (e: Exception) {
                 Log.w(TAG, "judge: ${e.message}")
                 return if (cfg.blockUnchecked) blur(bmp, w, h) else null

@@ -70,7 +70,7 @@ object Downloads {
 
         // תמונות וסרטונים שנשמרים לגלריה לא עוברים את סינון התמונות — חוסמים אותם כשהסינון פעיל
         val cfg = ImageFilterSettings.config.value
-        if (cfg.enabled && cfg.categories.isNotEmpty() && (mime.startsWith("image/") || mime.startsWith("video/"))) {
+        if (cfg.active && (mime.startsWith("image/") || mime.startsWith("video/"))) {
             set { it.copy(status = DownloadStatus.BLOCKED, note = "הורדת תמונות וסרטונים חסומה כשסינון התמונות פעיל") }
             return
         }
