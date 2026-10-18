@@ -11,15 +11,18 @@ android {
     // ב-GitHub Actions משתמשים ב-NDK שכבר מותקן במכונה (עם מספר הגרסה שלו).
     // ב-Android Studio — ברירת המחדל.
     (System.getenv("ANDROID_NDK_HOME") ?: System.getenv("ANDROID_NDK_LATEST_HOME"))
-        ?.takeIf { it.isNotBlank() }
-        ?.let { java.io.File(it) }
-        ?.let { dir ->
-            val props = java.io.File(dir, "source.properties")
-            val revision = if (props.exists()) {
+        ?.takeIf { path -> path.isNotBlank() }
+        ?.let { path ->
+            val dir = file(path)
+            val props = dir.resolve("source.properties")
+            val revision: String? = if (props.exists()) {
                 props.readLines()
-                    .firstOrNull { it.trim().startsWith("Pkg.Revision") }
-                    ?.substringAfter("=")?.trim()
-            } else null
+                    .firstOrNull { line -> line.trim().startsWith("Pkg.Revision") }
+                    ?.substringAfter("=")
+                    ?.trim()
+            } else {
+                null
+            }
             if (revision != null) {
                 ndkPath = dir.absolutePath
                 ndkVersion = revision
