@@ -10,10 +10,10 @@ android {
 
     defaultConfig {
         applicationId = "com.meni.whitelistfilter"
-        minSdk = 26
+        minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "2.0"
     }
 
     // מפתח חתימה קבוע בריפו, כדי שכל APK חדש יתעדכן מעל הקודם בלי להסיר

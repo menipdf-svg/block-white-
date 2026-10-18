@@ -24,7 +24,8 @@ jobs:
       - name: Build debug APK
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          set -o pipefail
+          ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -42,3 +43,14 @@ jobs:
           prerelease: false
           make_latest: true
           files: app/build/outputs/apk/debug/app-debug.apk
+
+      # אם הבנייה נכשלה — הלוג מתפרסם כדי שאפשר יהיה לראות את השגיאה
+      - name: Publish build log on failure
+        if: failure()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-log
+          name: לוג בנייה אחרונה שנכשלה
+          prerelease: true
+          make_latest: false
+          files: build.log
