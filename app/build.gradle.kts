@@ -35,8 +35,8 @@ android {
         applicationId = "com.meni.whitelistfilter"
         minSdk = 29
         targetSdk = 35
-        versionCode = 5
-        versionName = "3.2"
+        versionCode = 6
+        versionName = "3.3"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -133,6 +133,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-core")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // מודל AI מקומי לזיהוי תוכן בתמונות
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
