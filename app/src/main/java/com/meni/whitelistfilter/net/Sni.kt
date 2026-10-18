@@ -1,8 +1,5 @@
 package com.meni.whitelistfilter.net
 
-import com.meni.whitelistfilter.net.Packets.u16
-import com.meni.whitelistfilter.net.Packets.u8
-
 /** קורא את שם האתר (SNI) מתוך תחילת חיבור HTTPS */
 object Sni {
     sealed class Result {
@@ -10,6 +7,9 @@ object Sni {
         object None : Result()
         class Host(val name: String) : Result()
     }
+
+    private fun u8(b: ByteArray, o: Int): Int = b[o].toInt() and 0xFF
+    private fun u16(b: ByteArray, o: Int): Int = (u8(b, o) shl 8) or u8(b, o + 1)
 
     fun parse(b: ByteArray, off: Int, len: Int): Result {
         try {

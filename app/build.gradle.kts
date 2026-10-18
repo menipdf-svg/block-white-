@@ -8,12 +8,34 @@ android {
     namespace = "com.meni.whitelistfilter"
     compileSdk = 35
 
+    // ב-GitHub Actions משתמשים ב-NDK שכבר מותקן במכונה. ב-Android Studio — ברירת המחדל.
+    (System.getenv("ANDROID_NDK_HOME") ?: System.getenv("ANDROID_NDK_LATEST_HOME"))
+        ?.takeIf { it.isNotBlank() && file(it).exists() }
+        ?.let { ndkPath = it }
+
     defaultConfig {
         applicationId = "com.meni.whitelistfilter"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = 3
+        versionName = "3.0"
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
+        externalNativeBuild {
+            ndkBuild {
+                // רק הספרייה, בלי קובץ ההרצה הנפרד של hev
+                targets += "hev-socks5-tunnel"
+            }
+        }
+    }
+
+    // מנוע ה-VPN (hev-socks5-tunnel, קוד C) — נבנה מתוך src/main/jni
+    externalNativeBuild {
+        ndkBuild {
+            path = file("src/main/jni/Android.mk")
+        }
     }
 
     // מפתח חתימה קבוע בריפו, כדי שכל APK חדש יתעדכן מעל הקודם בלי להסיר

@@ -10,12 +10,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 
-enum class Mode(val title: String) {
-    BLOCK("חסום"),
-    WHITELIST("רשימה לבנה"),
-    OPEN("פתוח")
-}
-
 data class AppRule(
     val mode: Mode = Mode.WHITELIST,
     val domains: Set<String> = emptySet()
@@ -97,25 +91,6 @@ object Rules {
             Mode.BLOCK -> false
             Mode.OPEN -> true
             Mode.WHITELIST -> matches(_data.value.global, domain) || matches(rule.domains, domain)
-        }
-    }
-
-    /** חיבור לכתובת IP: מותר אם אחד הדומיינים שהפנו לכתובת הזו מותר לאפליקציה */
-    fun connectionAllowed(uid: Int, domains: Set<String>): Boolean {
-        return when (ruleForUid(uid).mode) {
-            Mode.BLOCK -> false
-            Mode.OPEN -> true
-            Mode.WHITELIST -> domains.any { isAllowed(uid, it) }
-        }
-    }
-
-    /** שאילתת DNS. אם לא ידוע מי שאל — מותר אם יש אפליקציה כלשהי שמותר לה */
-    fun dnsAllowed(uid: Int, domain: String): Boolean {
-        if (uid >= 10000 && packagesForUid(uid).isNotEmpty()) return isAllowed(uid, domain)
-        val d = _data.value
-        if (matches(d.global, domain)) return true
-        return d.apps.values.any {
-            it.mode == Mode.OPEN || (it.mode == Mode.WHITELIST && matches(it.domains, domain))
         }
     }
 

@@ -17,9 +17,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.meni.whitelistfilter.FilterState
+import com.meni.whitelistfilter.FilterVpnService
 import com.meni.whitelistfilter.Lock
 import com.meni.whitelistfilter.Pin
 import com.meni.whitelistfilter.Protection
+import kotlinx.coroutines.delay
+import java.util.Locale
+
+private fun megabytes(bytes: Long): String =
+    String.format(Locale.US, "%.1f MB", bytes / 1_000_000.0)
 
 @Composable
 fun StatusScreen(onStart: () -> Unit, onStop: () -> Unit) {
@@ -28,6 +34,14 @@ fun StatusScreen(onStart: () -> Unit, onStop: () -> Unit) {
     var refresh by remember { mutableIntStateOf(0) }
     val owner = remember(refresh) { Protection.isOwner(ctx) }
     val alwaysOn = remember(refresh) { Protection.isOn(ctx, Lock.ALWAYS_ON_VPN) }
+    var traffic by remember { mutableStateOf<LongArray?>(null) }
+    LaunchedEffect(running) {
+        while (running) {
+            traffic = FilterVpnService.trafficBytes()
+            delay(2000)
+        }
+        traffic = null
+    }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -50,6 +64,16 @@ fun StatusScreen(onStart: () -> Unit, onStop: () -> Unit) {
                             if (running) "✅ הסינון פעיל" else "⛔ הסינון כבוי",
                             style = MaterialTheme.typography.titleMedium
                         )
+                        Text(
+                            "VPN מקומי — כל התעבורה עוברת רק דרך המכשיר",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        traffic?.let {
+                            Text(
+                                "↑ ${megabytes(it[0])}   ↓ ${megabytes(it[1])}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                         if (alwaysOn) Text("נעול: עולה אוטומטית", style = MaterialTheme.typography.bodySmall)
                     }
                     if (!running) Button(onClick = onStart) { Text("הפעל") }
