@@ -24,6 +24,28 @@
             </intent-filter>
         </activity>
 
+        <!-- דפדפן מסונן: מופיע כאפליקציה נפרדת, ויכול להיות דפדפן ברירת המחדל -->
+        <activity
+            android:name=".BrowserActivity"
+            android:exported="true"
+            android:label="דפדפן מסונן"
+            android:launchMode="singleTask"
+            android:taskAffinity=".browser"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".FilterVpnService"
             android:exported="true"

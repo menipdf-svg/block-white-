@@ -68,6 +68,15 @@ object FilterState {
         requests.remove(pkg)
     }
 
+    // ----- סינון תמונות בדפדפן -----
+    val imagesChecked = MutableStateFlow(0)
+    val imagesBlurred = MutableStateFlow(0)
+
+    fun imageChecked(blurred: Boolean) {
+        imagesChecked.update { it + 1 }
+        if (blurred) imagesBlurred.update { it + 1 }
+    }
+
     fun clearLog() {
         log.value = emptyList()
         lastSeen.clear()

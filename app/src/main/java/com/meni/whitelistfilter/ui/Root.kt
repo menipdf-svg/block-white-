@@ -26,7 +26,7 @@ fun Root(onStart: () -> Unit, onStop: () -> Unit) {
 
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var openApp by rememberSaveable { mutableStateOf<String?>(null) }
-    val tabs = listOf("🛡️" to "סטטוס", "📱" to "אפליקציות", "🌐" to "דומיינים", "📋" to "יומן")
+    val tabs = listOf("🛡️" to "סטטוס", "📱" to "אפליקציות", "🌐" to "דומיינים", "🖼️" to "תמונות", "📋" to "יומן")
 
     Scaffold(
         bottomBar = {
@@ -52,6 +52,7 @@ fun Root(onStart: () -> Unit, onStop: () -> Unit) {
                 tab == 0 -> StatusScreen(onStart, onStop)
                 tab == 1 -> AppsScreen(onOpen = { openApp = it })
                 tab == 2 -> DomainsScreen()
+                tab == 3 -> ImagesScreen(onBrowserDomains = { openApp = ctx.packageName })
                 else -> LogScreen()
             }
         }

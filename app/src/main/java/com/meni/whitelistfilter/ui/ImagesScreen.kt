@@ -1,0 +1,141 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
+package com.meni.whitelistfilter.ui
+
+import android.content.Intent
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import com.meni.whitelistfilter.BrowserActivity
+import com.meni.whitelistfilter.FilterState
+import com.meni.whitelistfilter.image.ImageCategory
+import com.meni.whitelistfilter.image.ImageFilterSettings
+import com.meni.whitelistfilter.image.ImageJudge
+import com.meni.whitelistfilter.image.Sensitivity
+
+@Composable
+fun ImagesScreen(onBrowserDomains: () -> Unit) {
+    val ctx = LocalContext.current
+    remember { ImageFilterSettings.init(ctx) }
+    val cfg by ImageFilterSettings.config.collectAsState()
+    val checked by FilterState.imagesChecked.collectAsState()
+    val blurred by FilterState.imagesBlurred.collectAsState()
+
+    LazyColumn(
+        Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item {
+            Text(
+                "סינון תמונות",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(top = 16.dp)
+            )
+            Text(
+                "בדפדפן המסונן כל תמונה נבדקת במודל AI שרץ על המכשיר עצמו, ומה שבחרת מטושטש לפני שהוא מוצג. שום תמונה לא נשלחת לשרת.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (cfg.enabled) "✅ סינון תמונות פעיל" else "⛔ סינון תמונות כבוי",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Switch(checked = cfg.enabled, onCheckedChange = { on -> ImageFilterSettings.update { it.copy(enabled = on) } })
+                    }
+                    if (checked > 0) {
+                        Text("נבדקו $checked תמונות, טושטשו $blurred", style = MaterialTheme.typography.bodySmall)
+                    }
+                    ImageJudge.error?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = { ctx.startActivity(Intent(ctx, BrowserActivity::class.java)) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("🌐 פתח את הדפדפן המסונן") }
+                }
+            }
+        }
+
+        item { SectionTitle("מה לטשטש") }
+        items(ImageCategory.entries.size) { i ->
+            val cat = ImageCategory.entries[i]
+            Card(Modifier.fillMaxWidth().clickable { ImageFilterSettings.toggleCategory(cat) }) {
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(cat.emoji, style = MaterialTheme.typography.titleLarge)
+                    Spacer(Modifier.width(12.dp))
+                    Text(cat.title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Checkbox(checked = cat in cfg.categories, onCheckedChange = { ImageFilterSettings.toggleCategory(cat) })
+                }
+            }
+        }
+
+        item { SectionTitle("רגישות") }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Sensitivity.entries.forEach { s ->
+                    FilterChip(
+                        selected = cfg.sensitivity == s,
+                        onClick = { ImageFilterSettings.update { it.copy(sensitivity = s) } },
+                        label = { Text(s.title) }
+                    )
+                }
+            }
+            Text(
+                "רגישות גבוהה מטשטשת גם כשהמודל פחות בטוח — יותר חסימות, וגם יותר טעויות.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("טשטש תמונות שלא נבדקו", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "פורמט לא נתמך או שגיאה בבדיקה — ליתר ביטחון התמונה מטושטשת",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Switch(
+                        checked = cfg.blockUnchecked,
+                        onCheckedChange = { on -> ImageFilterSettings.update { it.copy(blockUnchecked = on) } }
+                    )
+                }
+            }
+        }
+
+        item { SectionTitle("אתרים בדפדפן") }
+        item {
+            Card(Modifier.fillMaxWidth().clickable { onBrowserDomains() }) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("🌐 דומיינים של הדפדפן", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "הדפדפן מקבל את הרשימה הכללית, ועוד דומיינים שתאשר לו כאן. גם בקשות שנחסמו מופיעות שם עם כפתור אישור.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        }
+
+        item {
+            Text(
+                "חשוב: הסינון עובד רק בדפדפן הזה. כדי שלא יעקפו אותו, הגדר את כרום ושאר הדפדפנים כ\"חסום\" בלשונית האפליקציות.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(vertical = 16.dp)
+            )
+        }
+    }
+}

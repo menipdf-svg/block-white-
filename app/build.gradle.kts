@@ -33,8 +33,8 @@ android {
         applicationId = "com.meni.whitelistfilter"
         minSdk = 29
         targetSdk = 35
-        versionCode = 4
-        versionName = "3.1"
+        versionCode = 5
+        versionName = "3.2"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -84,6 +84,43 @@ android {
     buildFeatures {
         compose = true
     }
+
+    // המודלים נטענים ישירות מהזיכרון, אז אסור לדחוס אותם
+    androidResources {
+        noCompress += "tflite"
+    }
+}
+
+// ----- מודלי ה-AI לסינון תמונות -----
+// יורדים אוטומטית בזמן הבנייה (ב-GitHub Actions וגם ב-Android Studio), ולא נשמרים בריפו
+val modelFiles = mapOf(
+    "efficientdet_lite0.tflite" to
+        "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/latest/efficientdet_lite0.tflite",
+    "efficientnet_lite0.tflite" to
+        "https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/int8/latest/efficientnet_lite0.tflite"
+)
+
+val downloadModels by tasks.registering {
+    val dir = file("src/main/assets/models")
+    outputs.dir(dir)
+    doLast {
+        dir.mkdirs()
+        modelFiles.forEach { (name, url) ->
+            val target = File(dir, name)
+            if (!target.exists() || target.length() == 0L) {
+                logger.lifecycle("Downloading model $name")
+                val tmp = File(dir, "$name.part")
+                java.net.URI(url).toURL().openStream().use { input ->
+                    tmp.outputStream().use { output -> input.copyTo(output) }
+                }
+                tmp.renameTo(target)
+            }
+        }
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn(downloadModels)
 }
 
 dependencies {
@@ -95,4 +132,6 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // מודל AI מקומי לזיהוי תוכן בתמונות
+    implementation("com.google.mediapipe:tasks-vision:0.10.14")
 }
