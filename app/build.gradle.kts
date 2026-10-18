@@ -1,3 +1,5 @@
+import java.net.URI
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -110,7 +112,7 @@ val downloadModels by tasks.registering {
             if (!target.exists() || target.length() == 0L) {
                 logger.lifecycle("Downloading model $name")
                 val tmp = File(dir, "$name.part")
-                java.net.URI(url).toURL().openStream().use { input ->
+                URI(url).toURL().openStream().use { input ->
                     tmp.outputStream().use { output -> input.copyTo(output) }
                 }
                 tmp.renameTo(target)
