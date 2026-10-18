@@ -79,9 +79,22 @@ object Rules {
         return packagesForUid(uid).firstNotNullOfOrNull { apps[it] } ?: AppRule()
     }
 
-    private fun matches(set: Set<String>, domain: String): Boolean {
+    private fun matches(set: Set<String>, domain: String): Boolean = firstMatch(set, domain) != null
+
+    /** הכלל ברשימה שמאשר את הדומיין (הוא עצמו או דומיין-אב), או null */
+    fun firstMatch(set: Set<String>, domain: String): String? {
         val d = normalize(domain)
-        return set.any { d == it || d.endsWith(".$it") }
+        return set.firstOrNull { d == it || d.endsWith(".$it") }
+    }
+
+    private val secondLevel = setOf("co", "com", "org", "net", "ac", "gov", "edu", "muni", "k12")
+
+    /** הדומיין הראשי: i.ytimg.com ← ytimg.com, www.ynet.co.il ← ynet.co.il */
+    fun baseDomain(domain: String): String {
+        val parts = normalize(domain).split('.')
+        if (parts.size <= 2) return parts.joinToString(".")
+        val keep = if (parts.last().length == 2 && parts[parts.size - 2] in secondLevel) 3 else 2
+        return parts.takeLast(keep).joinToString(".")
     }
 
     /** האם האפליקציה הזו רשאית לגשת לדומיין */

@@ -29,6 +29,8 @@ interface ProxyPolicy {
     fun mode(uid: Int): Mode
     fun isAllowed(uid: Int, domain: String): Boolean
     fun blocked(uid: Int, target: String, isDomain: Boolean)
+    /** חיבור שאושר — לרשימת היעדים של האפליקציה */
+    fun passed(uid: Int, target: String, isDomain: Boolean) {}
     fun resolve(host: String): Array<InetAddress> = InetAddress.getAllByName(host)
 }
 
@@ -213,6 +215,7 @@ class LocalProxy(private val policy: ProxyPolicy) {
         try {
             reply(output, 0)
             var first: ByteArray? = null
+            var seenName: String? = target.domain
             if (mode == Mode.WHITELIST && target.port == 443) {
                 // בודקים גם את שם האתר שבתוך HTTPS, לפני שמשהו מגיע לשרת
                 val (bytes, host) = readClientHello(client, input)
@@ -225,7 +228,9 @@ class LocalProxy(private val policy: ProxyPolicy) {
                     return
                 }
                 first = bytes
+                if (seenName == null) seenName = host
             }
+            policy.passed(uid, seenName ?: target.label, seenName != null)
             client.soTimeout = 0
             relay(client, input, remote, first)
         } finally {
@@ -344,6 +349,7 @@ class LocalProxy(private val policy: ProxyPolicy) {
         } catch (_: Exception) {
             return
         }
+        policy.passed(uid, dest.label, dest.domain != null)
         val sock = DatagramSocket()
         track(sock)
         try {

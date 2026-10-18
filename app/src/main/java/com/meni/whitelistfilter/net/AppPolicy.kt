@@ -21,4 +21,7 @@ class AppPolicy(private val cm: ConnectivityManager) : ProxyPolicy {
 
     override fun blocked(uid: Int, target: String, isDomain: Boolean) =
         FilterState.block(uid, target, isDomain)
+
+    override fun passed(uid: Int, target: String, isDomain: Boolean) =
+        FilterState.request(uid, target, isDomain, true)
 }
