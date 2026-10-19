@@ -1,4 +1,5 @@
 import java.net.URI
+import java.security.MessageDigest
 
 plugins {
     id("com.android.application")
@@ -111,7 +112,7 @@ val modelSha256 = mapOf(
 )
 
 fun sha256(f: File): String {
-    val md = java.security.MessageDigest.getInstance("SHA-256")
+    val md = MessageDigest.getInstance("SHA-256")
     f.inputStream().use { input ->
         val buf = ByteArray(1 shl 16)
         while (true) {
