@@ -192,12 +192,25 @@ class WebFilter(context: Context, private val userAgent: String) {
         val outW = max(1, (origW * scale).roundToInt())
         val outH = max(1, (origH * scale).roundToInt())
 
-        val tiny = Bitmap.createScaledBitmap(src, max(1, src.width / 28), max(1, src.height / 28), true)
-        val mid = Bitmap.createScaledBitmap(tiny, max(1, outW / 8), max(1, outH / 8), true)
+        // מקטינים בהדרגה (חצי בכל פעם, כדי שכל הפיקסלים ישפיעו) עד רשת של 3×3 בלבד —
+        // נשארים רק הצבעים הכלליים, בלי שום צורה
+        var small = src
+        while (small.width > 6 || small.height > 6) {
+            val next = Bitmap.createScaledBitmap(small, max(1, small.width / 2), max(1, small.height / 2), true)
+            if (small !== src) small.recycle()
+            small = next
+        }
+        val grid = Bitmap.createScaledBitmap(small, 3, 3, true)
+        if (small !== src) small.recycle()
+
+        // מגדילים בשלבים, כדי שהמעבר בין הצבעים יהיה חלק לגמרי
+        val mid = Bitmap.createScaledBitmap(grid, 24, 24, true)
+        grid.recycle()
         val out = Bitmap.createScaledBitmap(mid, outW, outH, true).copy(Bitmap.Config.ARGB_8888, true)
-        Canvas(out).drawColor(Color.argb(70, 120, 120, 120))
-        tiny.recycle()
         mid.recycle()
+
+        // שכבה אפורה חזקה מעל — כמעט לא רואים אפילו את הצבעים
+        Canvas(out).drawColor(Color.argb(150, 128, 128, 128))
         return encode(out)
     }
 
