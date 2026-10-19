@@ -65,10 +65,21 @@ class NudeModel(ctx: Context, assetPath: String, private val size: Int) {
             ctx.assets.open(assetPath).use { input -> tmp.outputStream().use { input.copyTo(it) } }
             tmp.renameTo(file)
         }
-        val opts = OrtSession.SessionOptions().apply {
-            setIntraOpNumThreads(if (size > 320) 4 else 2)
+        // XNNPACK — מנוע ההאצה של ONNX Runtime למעבדי ARM. אם הוא לא זמין, נופלים למעבד הרגיל
+        val threads = if (size > 320) 4 else 2
+        session = try {
+            env.createSession(file.absolutePath, OrtSession.SessionOptions().apply {
+                setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                addXnnpack(mapOf("intra_op_num_threads" to threads.toString()))
+                setIntraOpNumThreads(1)
+            })
+        } catch (e: Throwable) {
+            android.util.Log.w("NudeModel", "XNNPACK unavailable: ${e.message}")
+            env.createSession(file.absolutePath, OrtSession.SessionOptions().apply {
+                setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                setIntraOpNumThreads(threads)
+            })
         }
-        session = env.createSession(file.absolutePath, opts)
         inputName = session.inputNames.first()
     }
 

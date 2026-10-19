@@ -167,6 +167,27 @@ fun ImagesScreen(onBrowserDomains: () -> Unit) {
             }
         }
 
+        item { SectionTitle("מהירות") }
+        item {
+            val ads by FilterState.adsBlocked.collectAsState()
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("🚫 חסימת פרסומות", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "חוסם רשתות פרסום ומעקב (Taboola, Outbrain, Google Ads ועוד). הדפים נטענים מהר יותר, ויש פחות תמונות לבדוק." +
+                                if (ads > 0) "\nנחסמו עד עכשיו: $ads" else "",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Switch(
+                        checked = cfg.blockAds,
+                        onCheckedChange = { on -> ImageFilterSettings.update { it.copy(blockAds = on) } }
+                    )
+                }
+            }
+        }
+
         item { SectionTitle("אתרים בדפדפן") }
         item {
             Card(Modifier.fillMaxWidth().clickable { onBrowserDomains() }) {

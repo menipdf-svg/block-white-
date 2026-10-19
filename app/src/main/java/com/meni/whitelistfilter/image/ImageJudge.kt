@@ -36,12 +36,17 @@ object ImageJudge {
     var error: String? = null
         private set
 
-    /** פירוט מה המודלים ראו בתמונה האחרונה שנבדקה — ליומן התמונות */
-    @Volatile
-    var lastDetail: String = ""
-        private set
-    private val notes = ArrayList<String>()
-    private fun note(s: String) { notes += s }
+    /**
+     * פירוט מה המודלים ראו בתמונה האחרונה שנבדקה בתהליכון הזה — ליומן התמונות.
+     * כמה תמונות נבדקות במקביל, אז לכל תהליכון הפירוט שלו.
+     */
+    private val detailTL = ThreadLocal<String>()
+    val lastDetail: String get() = detailTL.get() ?: ""
+    private val notesTL = ThreadLocal.withInitial { ArrayList<String>() }
+    private fun note(s: String) { notesTL.get()!!.add(s) }
+
+    /** מודל הפנים של MediaPipe לא בטוח לשימוש מכמה תהליכונים בבת אחת */
+    private val faceLock = Any()
     private fun f2(x: Float) = String.format(java.util.Locale.US, "%.2f", x)
 
     // ----- תוויות NudeNet -----
@@ -124,14 +129,33 @@ object ImageJudge {
      * מחזיר את הסיבות לחסימה (ריק = התמונה בסדר).
      * זורק חריגה אם המודלים לא זמינים — כדי שהקורא יחליט מה לעשות בתמונה שלא נבדקה.
      */
-    @Synchronized
+    /**
+     * טוען את המודלים מראש (ברקע), ומריץ עליהם תמונה ריקה אחת כדי "לחמם" אותם —
+     * כך התמונה הראשונה בדף לא מחכה לטעינה.
+     */
+    fun warmUp(ctx: Context) {
+        try {
+            if (!ensure(ctx)) return
+            val blank = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+            light?.detect(blank, 0.9f)
+            if (ImageFilterSettings.config.value.women != WomenLevel.OFF) {
+                heavyModel(ctx)?.detect(blank, 0.9f)
+            }
+            blank.recycle()
+        } catch (e: Throwable) {
+            Log.w(TAG, "warmUp: ${e.message}")
+        }
+    }
+
+    /** לא מסונכרן: המודל הקטן והגדול יכולים לעבוד על תמונות שונות במקביל */
     fun find(ctx: Context, bitmap: Bitmap, cfg: ImageFilterConfig): Set<String> {
         val wantPeople = ImageCategory.PEOPLE in cfg.categories
         val women = cfg.women
         if (!wantPeople && women == WomenLevel.OFF) return emptySet()
         if (!ensure(ctx)) throw IllegalStateException(error ?: "המודל לא זמין")
+        val notes = notesTL.get()!!
         notes.clear()
-        lastDetail = ""
+        detailTL.set("")
         val started = System.currentTimeMillis()
 
         val bmp = if (bitmap.config == Bitmap.Config.ARGB_8888) bitmap
@@ -189,7 +213,7 @@ object ImageJudge {
         } finally {
             if (bmp !== bitmap) bmp.recycle()
             note("זמן: ${System.currentTimeMillis() - started}ms")
-            lastDetail = notes.joinToString(" · ")
+            detailTL.set(notes.joinToString(" · "))
         }
         return reasons
     }
@@ -231,6 +255,10 @@ object ImageJudge {
     /** מחפש פנים בתוך האזור, מהגדולות לקטנות. מחזיר מלבנים בקואורדינטות של כל התמונה */
     private fun findFaces(bmp: Bitmap, area: Rect): List<Rect> {
         val fd = faces ?: return emptyList()
+        return synchronized(faceLock) { findFacesLocked(fd, bmp, area) }
+    }
+
+    private fun findFacesLocked(fd: FaceDetector, bmp: Bitmap, area: Rect): List<Rect> {
         if (area.width() < 16 || area.height() < 16) return emptyList()
         val crop = Bitmap.createBitmap(bmp, area.left, area.top, area.width(), area.height())
         try {

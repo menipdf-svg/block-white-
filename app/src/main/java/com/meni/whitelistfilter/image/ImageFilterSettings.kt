@@ -32,7 +32,9 @@ data class ImageFilterConfig(
     val sensitivity: Sensitivity = Sensitivity.MEDIUM,
     val women: WomenLevel = WomenLevel.OFF,
     /** תמונה שלא הצלחנו לבדוק (פורמט לא נתמך, שגיאה) — לטשטש ליתר ביטחון */
-    val blockUnchecked: Boolean = true
+    val blockUnchecked: Boolean = true,
+    /** חסימת רשתות פרסום ומעקב בדפדפן */
+    val blockAds: Boolean = true
 ) {
     /** האם יש בכלל משהו לבדוק */
     val active: Boolean get() = enabled && (categories.isNotEmpty() || women != WomenLevel.OFF)
@@ -59,7 +61,8 @@ object ImageFilterSettings {
             sensitivity = Sensitivity.entries.firstOrNull { it.name == prefs.getString("sensitivity", null) }
                 ?: Sensitivity.MEDIUM,
             blockUnchecked = prefs.getBoolean("block_unchecked", true),
-            women = WomenLevel.entries.firstOrNull { it.name == prefs.getString("women", null) } ?: WomenLevel.OFF
+            women = WomenLevel.entries.firstOrNull { it.name == prefs.getString("women", null) } ?: WomenLevel.OFF,
+            blockAds = prefs.getBoolean("block_ads", true)
         )
     }
 
@@ -72,6 +75,7 @@ object ImageFilterSettings {
             .putString("sensitivity", c.sensitivity.name)
             .putBoolean("block_unchecked", c.blockUnchecked)
             .putString("women", c.women.name)
+            .putBoolean("block_ads", c.blockAds)
             .apply()
     }
 

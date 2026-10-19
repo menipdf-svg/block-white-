@@ -82,6 +82,7 @@ import com.meni.whitelistfilter.browser.Downloads
 import com.meni.whitelistfilter.browser.PageEntry
 import com.meni.whitelistfilter.image.ImageCache
 import com.meni.whitelistfilter.image.ImageFilterSettings
+import com.meni.whitelistfilter.image.ImageJudge
 import com.meni.whitelistfilter.image.WebFilter
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
@@ -139,8 +140,8 @@ class FilterBridge(private val web: WebView, private val filter: WebFilter) {
     }
 
     companion object {
-        /** בדיקה אחת בכל פעם — המודלים ממילא עובדים אחד-אחד */
-        private val checks = java.util.concurrent.Executors.newSingleThreadExecutor()
+        /** שתי בדיקות במקביל — המודל הקטן והגדול עובדים בו-זמנית על תמונות שונות */
+        private val checks = java.util.concurrent.Executors.newFixedThreadPool(2)
     }
 }
 
@@ -270,6 +271,10 @@ class BrowserActivity : ComponentActivity() {
         Rules.init(this)
         ImageFilterSettings.init(this)
         BrowserStore.init(this)
+
+        // טוענים את מודלי ה-AI ברקע כבר עכשיו, כדי שהתמונה הראשונה לא תחכה
+        val app = applicationContext
+        Thread({ ImageJudge.warmUp(app) }, "model-warmup").apply { priority = Thread.MIN_PRIORITY }.start()
 
         userAgent = WebSettings.getDefaultUserAgent(this)
         filter = WebFilter(this, userAgent)

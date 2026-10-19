@@ -9,12 +9,12 @@ import android.graphics.Paint
 import android.os.Build
 import android.os.Process
 import android.util.Log
-import android.util.LruCache
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import com.meni.whitelistfilter.FilterState
 import com.meni.whitelistfilter.Rules
+import com.meni.whitelistfilter.browser.AdBlock
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -33,9 +33,6 @@ class WebFilter(context: Context, private val userAgent: String) {
     private val ctx = context.applicationContext
     private val uid = Process.myUid()
 
-    /** תוצאות קודמות לפי כתובת התמונה (true = טושטשה) */
-    private val verdicts = LruCache<String, Boolean>(500)
-    private var verdictsFor: ImageFilterConfig? = null
 
     companion object {
         private const val TAG = "WebFilter"
@@ -57,10 +54,16 @@ class WebFilter(context: Context, private val userAgent: String) {
     fun isBlocked(bytes: ByteArray, label: String): Boolean {
         val cfg = ImageFilterSettings.config.value
         if (!cfg.active) return false
+        val id = "inline:" + sha1(bytes)
+        DiskImageCache.getVerdict(ctx, cfg, id)?.let { return it }
         val blocked = judge(bytes, cfg, label) != null
+        DiskImageCache.putVerdict(ctx, cfg, id, blocked)
         FilterState.imageChecked(blocked)
         return blocked
     }
+
+    private fun sha1(b: ByteArray): String =
+        java.security.MessageDigest.getInstance("SHA-1").digest(b).joinToString("") { "%02x".format(it) }
 
     fun handle(request: WebResourceRequest): WebResourceResponse? {
         val url = request.url
@@ -68,6 +71,13 @@ class WebFilter(context: Context, private val userAgent: String) {
         if (scheme != "http" && scheme != "https") return null
         val host = url.host ?: return null
         val domain = Rules.normalize(host)
+        val cfg = ImageFilterSettings.config.value
+
+        // פרסומות ומעקב — נחסמים לפני הכל
+        if (cfg.blockAds && AdBlock.isAd(host)) {
+            FilterState.adBlocked()
+            return if (request.isForMainFrame) blockedPage(domain) else empty(204, "No Content")
+        }
 
         if (!isAllowedHost(host)) {
             FilterState.block(uid, domain, true)
@@ -75,7 +85,6 @@ class WebFilter(context: Context, private val userAgent: String) {
         }
         FilterState.request(uid, domain, true, true)
 
-        val cfg = ImageFilterSettings.config.value
         if (!cfg.active) return null
         if (!request.method.equals("GET", true) || !looksLikeImage(request)) return null
         // SVG (לוגואים ואייקונים) — הדפדפן צריך אותם עם הסוג הנכון, ולא בודקים אותם ממילא
@@ -129,6 +138,15 @@ class WebFilter(context: Context, private val userAgent: String) {
 
     /** מוריד את התמונה, בודק אותה, ומחזיר את הבתים שהדפדפן יקבל (המקור או משטח חסום) */
     private fun produce(urlStr: String, reqHeaders: Map<String, String>, cfg: ImageFilterConfig): ByteArray {
+        // תמונה שכבר נבדקה (גם בפעם קודמת שהאפליקציה רצה) — מגיעה מיד מהדיסק, בלי הורדה ובלי מודלים
+        DiskImageCache.get(ctx, cfg, urlStr)?.let { return it }
+        val result = download(urlStr, reqHeaders, cfg)
+        if (result.second) DiskImageCache.put(ctx, cfg, urlStr, result.first)
+        return result.first
+    }
+
+    /** מוריד ובודק. מחזיר (בתים, האם לשמור במטמון) */
+    private fun download(urlStr: String, reqHeaders: Map<String, String>, cfg: ImageFilterConfig): Pair<ByteArray, Boolean> {
         val conn = URL(urlStr).openConnection() as HttpURLConnection
         try {
             conn.instanceFollowRedirects = true
@@ -151,32 +169,22 @@ class WebFilter(context: Context, private val userAgent: String) {
             val finalHost = conn.url.host
             if (finalHost != null && !isAllowedHost(finalHost)) {
                 FilterState.block(uid, Rules.normalize(finalHost), true)
-                return ByteArray(0)
+                return ByteArray(0) to false
             }
 
             conn.headerFields["Set-Cookie"]?.forEach { CookieManager.getInstance().setCookie(urlStr, it) }
 
-            if (code !in 200..299) return ByteArray(0)
+            if (code !in 200..299) return ByteArray(0) to false
             val bytes = conn.inputStream.use { readLimited(it) }
-            if (bytes.isEmpty()) return bytes
+            if (bytes.isEmpty()) return bytes to false
             val contentType = (conn.contentType ?: "").lowercase()
 
             // SVG (גרפיקה וקטורית — אייקונים) → מעבירים כמו שזה
-            if (contentType.contains("svg")) return bytes
-
-            val key = "${FilterState.cacheGeneration.value}|${cfg.hashCode()}|$urlStr"
-            synchronized(verdicts) {
-                if (verdictsFor != cfg) {
-                    verdicts.evictAll()
-                    verdictsFor = cfg
-                }
-            }
-            if (verdicts.get(key) == false) return bytes
+            if (contentType.contains("svg")) return bytes to false
 
             val blocked = judge(bytes, cfg, urlStr)
-            verdicts.put(key, blocked != null)
             FilterState.imageChecked(blocked != null)
-            return blocked?.second ?: bytes
+            return (blocked?.second ?: bytes) to true
         } finally {
             conn.disconnect()
         }
