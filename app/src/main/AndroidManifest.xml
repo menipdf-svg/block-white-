@@ -61,6 +61,11 @@
             </intent-filter>
         </activity>
 
+        <!-- בדיקת תמונות לפיירפוקס המסונן (בודק מי מתחבר — רק org.mozilla.fenix...) -->
+        <service
+            android:name=".image.ImageCheckService"
+            android:exported="true" />
+
         <service
             android:name=".FilterVpnService"
             android:exported="true"

@@ -1,0 +1,26 @@
+{
+  "manifest_version": 2,
+  "name": "WLF Image Filter",
+  "version": "1.0",
+  "description": "On-device AI image filter (checked by the WhitelistFilter app)",
+  "browser_specific_settings": {
+    "gecko": { "id": "wlf@meni.local" }
+  },
+  "permissions": [
+    "webRequest",
+    "webRequestBlocking",
+    "<all_urls>",
+    "nativeMessaging",
+    "nativeMessagingFromContent",
+    "geckoViewAddons"
+  ],
+  "background": { "scripts": ["background.js"] },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ]
+}

@@ -36,8 +36,8 @@ android {
         applicationId = "com.meni.whitelistfilter"
         minSdk = 29
         targetSdk = 35
-        versionCode = 25
-        versionName = "5.0"
+        versionCode = 26
+        versionName = "5.1"
 
         ndk {
             abiFilters += listOf("arm64-v8a") // Galaxy S26 Ultra — arm64 בלבד
