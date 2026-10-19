@@ -76,7 +76,7 @@ class FirefoxActivity : ComponentActivity() {
             }
         }
         session.open(runtime)
-        geckoView = GeckoView(this).apply { setSession(session) }
+        geckoView = GeckoView(this).apply { setSession(this@FirefoxActivity.session) }
 
         val start = intent?.dataString?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
         if (start != null) load(start) else goHome()
