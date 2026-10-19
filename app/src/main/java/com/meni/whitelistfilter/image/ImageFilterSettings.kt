@@ -8,10 +8,7 @@ import kotlinx.coroutines.flow.update
 
 /** סוגי התמונות שאפשר לבחור לחסום */
 enum class ImageCategory(val title: String, val emoji: String) {
-    PEOPLE("אנשים", "🧍"),
-    LANDSCAPES("נופים", "🏞️"),
-    VEHICLES("רכבים", "🚗"),
-    ANIMALS("בעלי חיים", "🐾")
+    PEOPLE("אנשים (כל תמונה עם פנים)", "🧍")
 }
 
 /** סינון תמונות של נשים — שלוש רמות */

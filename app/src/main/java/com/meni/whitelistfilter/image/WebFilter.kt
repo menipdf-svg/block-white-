@@ -232,9 +232,6 @@ class WebFilter(context: Context, private val userAgent: String) {
 
     private fun reasonTitle(r: String) = when (r) {
         "PEOPLE" -> "אנשים"
-        "LANDSCAPES" -> "נוף"
-        "VEHICLES" -> "רכב"
-        "ANIMALS" -> "בעלי חיים"
         "WOMEN_NUDENET" -> "אישה (NudeNet)"
         "WOMEN" -> "אישה"
         else -> r

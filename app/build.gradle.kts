@@ -35,8 +35,8 @@ android {
         applicationId = "com.meni.whitelistfilter"
         minSdk = 29
         targetSdk = 35
-        versionCode = 13
-        versionName = "3.10"
+        versionCode = 14
+        versionName = "3.11"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -96,10 +96,6 @@ android {
 // ----- מודלי ה-AI לסינון תמונות -----
 // יורדים אוטומטית בזמן הבנייה (ב-GitHub Actions וגם ב-Android Studio), ולא נשמרים בריפו
 val modelFiles = mapOf(
-    "efficientdet_lite2.tflite" to
-        "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/int8/latest/efficientdet_lite2.tflite",
-    "efficientnet_lite0.tflite" to
-        "https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/int8/latest/efficientnet_lite0.tflite",
     "blaze_face_short_range.tflite" to
         "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite",
     // מודל מגדר: Age-Gender_Estimation_TF-Android של Shubham Panchal, רישיון MIT

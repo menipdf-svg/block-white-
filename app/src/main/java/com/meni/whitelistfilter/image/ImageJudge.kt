@@ -9,31 +9,23 @@ import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.facedetector.FaceDetector
-import com.google.mediapipe.tasks.vision.imageclassifier.ImageClassifier
-import com.google.mediapipe.tasks.vision.objectdetector.ObjectDetector
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
  * המודלים המקומיים. כולם רצים על המכשיר, בלי אינטרנט:
- *  - EfficientDet-Lite2 — מוצא אובייקטים בתמונה (אדם, רכב, בעלי חיים...)
- *  - EfficientNet-Lite0 — מסווג את כל התמונה (נוף, בגד ים, שמלה, סוג רכב...)
- *  - BlazeFace — מוצא פנים
- *  - מודל מגדר — מקבל פנים ומחזיר אם זו אישה
- *  - NudeNet — פנים של אישה ואזורי גוף חשופים/מכוסים (הכי מדויק לסינון נשים)
- * בנוסף, לכל אישה מחושב כמה מהגוף חשוף (לפי צבע עור), לרמות "בגד ים" ו"לבוש חלקי".
+ *  - NudeNet — פנים של אישה/גבר ואזורי גוף חשופים/מכוסים (המודל הראשי)
+ *  - BlazeFace — מוצא פנים (לקטגוריית "אנשים" ולגיבוי של סינון הנשים)
+ *  - מודל מגדר — מקבל פנים ומחזיר אם זו אישה (גיבוי כש-NudeNet לא הכריע)
+ * בנוסף, לכל אישה מחושב כמה מהגוף חשוף (לפי צבע עור), לרמה "לבוש חלקי".
  */
 object ImageJudge {
     private const val TAG = "ImageJudge"
-    private const val DETECTOR = "models/efficientdet_lite2.tflite"
-    private const val CLASSIFIER = "models/efficientnet_lite0.tflite"
     private const val FACES = "models/blaze_face_short_range.tflite"
     private const val GENDER = "models/gender.tflite"
     private const val NUDE = "models/nudenet_320n.onnx"
 
-    private var detector: ObjectDetector? = null
-    private var classifier: ImageClassifier? = null
     private var faces: FaceDetector? = null
     private var gender: GenderModel? = null
     private var nude: NudeModel? = null
@@ -51,86 +43,16 @@ object ImageJudge {
     private fun note(s: String) { notes += s }
     private fun f2(x: Float) = String.format(java.util.Locale.US, "%.2f", x)
 
-    // ----- תוויות של מודל הזיהוי (COCO) -----
-    private val DET_PEOPLE = setOf("person")
-    private val DET_VEHICLES = setOf("car", "bus", "truck", "motorcycle", "bicycle", "train", "airplane", "boat")
-    private val DET_ANIMALS = setOf(
-        "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe"
-    )
-
-    // ----- תוויות של מודל הסיווג (ImageNet) -----
-    private val CLS_LANDSCAPES = setOf(
-        "alp", "cliff", "coral reef", "geyser", "lakeside", "promontory", "sandbar",
-        "seashore", "valley", "volcano", "breakwater", "dam", "boathouse", "lakeshore"
-    )
-    private val CLS_VEHICLES = setOf(
-        "sports car", "convertible", "cab", "jeep", "limousine", "minivan", "pickup", "police van",
-        "racer", "beach wagon", "model t", "ambulance", "school bus", "trolleybus", "minibus",
-        "moving van", "trailer truck", "tow truck", "garbage truck", "fire engine", "tractor",
-        "motor scooter", "moped", "mountain bike", "bicycle-built-for-two", "tricycle", "go-kart",
-        "golfcart", "passenger car", "streetcar", "electric locomotive", "steam locomotive",
-        "bullet train", "airliner", "warplane", "speedboat", "container ship", "car wheel", "grille",
-        "half track", "snowmobile", "forklift", "recreational vehicle", "amphibian", "jinrikisha",
-        "horse cart", "oxcart", "freight car", "liner", "fireboat", "lifeboat", "catamaran", "trimaran",
-        "yawl", "schooner", "submarine", "airship", "space shuttle", "car mirror", "disk brake"
-    )
-
-    /** בגדים ודברים שמופיעים כמעט תמיד על אדם — סימן נוסף לתמונה של אנשים */
-    private val CLS_PEOPLE = setOf(
-        "groom", "scuba diver", "ballplayer", "suit", "jersey", "miniskirt", "bikini", "maillot",
-        "swimming trunks", "sweatshirt", "cardigan", "abaya", "gown", "kimono", "lab coat",
-        "military uniform", "bow tie", "wig", "lipstick", "brassiere", "fur coat", "trench coat",
-        "academic gown", "sarong", "poncho", "overskirt", "hoopskirt", "jean", "pajama", "windsor tie",
-        "mortarboard", "bonnet", "cowboy hat", "sombrero", "stole", "vestment", "neck brace"
-    )
-
-    /** בגדי ים */
-    private val CLS_SWIMWEAR = setOf("bikini", "maillot", "swimming trunks", "brassiere")
-
-    /** לבוש חשוף חלקית */
-    private val CLS_REVEALING = CLS_SWIMWEAR + setOf("miniskirt", "sarong")
-
-    /** סימנים שבדרך כלל מעידים על אישה בתמונה (כשלא רואים פנים) */
-    private val CLS_FEMALE_HINTS = setOf(
-        "bikini", "maillot", "brassiere", "miniskirt", "gown", "hoopskirt", "overskirt",
-        "lipstick", "wig", "abaya", "kimono", "sarong", "bonnet", "stole"
-    )
-
-    /** במודל ImageNet, המחלקות הראשונות (עד 397 בערך) הן בעלי חיים */
-    private const val LAST_ANIMAL_INDEX = 398
-
     @Synchronized
     private fun ensure(ctx: Context): Boolean {
-        if (loaded) return detector != null || classifier != null
+        if (loaded) return nude != null || faces != null
         loaded = true
         val errors = ArrayList<String>()
         try {
-            detector = ObjectDetector.createFromOptions(
-                ctx,
-                ObjectDetector.ObjectDetectorOptions.builder()
-                    .setBaseOptions(BaseOptions.builder().setModelAssetPath(DETECTOR).build())
-                    .setRunningMode(RunningMode.IMAGE)
-                    .setMaxResults(25)
-                    .setScoreThreshold(0.15f)
-                    .build()
-            )
+            nude = NudeModel(ctx, NUDE)
         } catch (e: Throwable) {
-            errors += "מודל הזיהוי לא נטען: ${e.message}"
-            Log.e(TAG, "detector", e)
-        }
-        try {
-            classifier = ImageClassifier.createFromOptions(
-                ctx,
-                ImageClassifier.ImageClassifierOptions.builder()
-                    .setBaseOptions(BaseOptions.builder().setModelAssetPath(CLASSIFIER).build())
-                    .setRunningMode(RunningMode.IMAGE)
-                    .setMaxResults(10)
-                    .setScoreThreshold(0.03f)
-                    .build()
-            )
-        } catch (e: Throwable) {
-            errors += "מודל הסיווג לא נטען: ${e.message}"
-            Log.e(TAG, "classifier", e)
+            errors += "מודל NudeNet לא נטען: ${e.message}"
+            Log.e(TAG, "nude", e)
         }
         try {
             faces = FaceDetector.createFromOptions(
@@ -151,98 +73,49 @@ object ImageJudge {
             errors += "מודל המגדר לא נטען: ${e.message}"
             Log.e(TAG, "gender", e)
         }
-        try {
-            nude = NudeModel(ctx, NUDE)
-        } catch (e: Throwable) {
-            errors += "מודל NudeNet לא נטען: ${e.message}"
-            Log.e(TAG, "nude", e)
-        }
         error = errors.takeIf { it.isNotEmpty() }?.joinToString("\n")
-        return detector != null || classifier != null
+        return nude != null || faces != null
     }
 
     /**
-     * מחזיר את הסיבות לטשטוש (ריק = התמונה בסדר).
+     * מחזיר את הסיבות לחסימה (ריק = התמונה בסדר).
      * זורק חריגה אם המודלים לא זמינים — כדי שהקורא יחליט מה לעשות בתמונה שלא נבדקה.
      */
     @Synchronized
     fun find(ctx: Context, bitmap: Bitmap, cfg: ImageFilterConfig): Set<String> {
-        val wanted = cfg.categories
+        val wantPeople = ImageCategory.PEOPLE in cfg.categories
         val women = cfg.women
-        if (wanted.isEmpty() && women == WomenLevel.OFF) return emptySet()
+        if (!wantPeople && women == WomenLevel.OFF) return emptySet()
         if (!ensure(ctx)) throw IllegalStateException(error ?: "המודל לא זמין")
         notes.clear()
         lastDetail = ""
         val started = System.currentTimeMillis()
 
-        val threshold = cfg.sensitivity.threshold
         val bmp = if (bitmap.config == Bitmap.Config.ARGB_8888) bitmap
         else bitmap.copy(Bitmap.Config.ARGB_8888, false)
-        val image = BitmapImageBuilder(bmp).build()
         val reasons = HashSet<String>()
-        val imageArea = (bmp.width * bmp.height).toFloat()
-
-        // כל מודל רץ רק כשצריך אותו, ולכל היותר פעם אחת
-        val labels = HashMap<String, Float>()
-        var classified = false
-        fun runClassifier() {
-            if (classified) return
-            classified = true
-            val cls = classifier ?: return
-            val sums = HashMap<ImageCategory, Float>()
-            cls.classify(image).classificationResult().classifications().firstOrNull()?.categories()?.forEach { c ->
-                val name = c.categoryName().lowercase()
-                labels[name] = c.score()
-                val cat = when {
-                    name in CLS_LANDSCAPES -> ImageCategory.LANDSCAPES
-                    name in CLS_VEHICLES -> ImageCategory.VEHICLES
-                    name in CLS_PEOPLE -> ImageCategory.PEOPLE
-                    c.index() in 1..LAST_ANIMAL_INDEX -> ImageCategory.ANIMALS
-                    else -> null
-                }
-                if (cat != null) sums[cat] = (sums[cat] ?: 0f) + c.score()
-            }
-            labels.entries.sortedByDescending { it.value }.take(3).takeIf { it.isNotEmpty() }?.let { top ->
-                note("סיווג: " + top.joinToString(", ") { "${it.key} ${f2(it.value)}" })
-            }
-            sums.forEach { (cat, score) -> if (score >= threshold && cat in wanted) reasons += cat.name }
-        }
-        fun labelScore(set: Set<String>): Float {
-            runClassifier()
-            return labels.filterKeys { it in set }.values.sum()
-        }
-
-        val persons = ArrayList<RectF>()
-        var detected = false
-        fun runDetector() {
-            if (detected) return
-            detected = true
-            val det = detector ?: return
-            for (d in det.detect(image).detections()) {
-                val box = d.boundingBox()
-                // אובייקט זעיר בפינה של התמונה לא נחשב
-                if (box.width() * box.height() < imageArea * 0.005f) continue
-                for (c in d.categories()) {
-                    if (c.score() >= 0.2f) note("זוהה: ${c.categoryName()} ${f2(c.score())}")
-                    when (c.categoryName().lowercase()) {
-                        in DET_PEOPLE -> {
-                            if (c.score() >= min(0.3f, threshold)) persons += box
-                            if (c.score() >= threshold && ImageCategory.PEOPLE in wanted) reasons += "PEOPLE"
-                        }
-                        in DET_VEHICLES -> if (c.score() >= threshold && ImageCategory.VEHICLES in wanted) reasons += "VEHICLES"
-                        in DET_ANIMALS -> if (c.score() >= threshold && ImageCategory.ANIMALS in wanted) reasons += "ANIMALS"
-                    }
-                }
-            }
-        }
 
         try {
-            // 1) קטגוריות (אנשים, נוף, רכב, בעלי חיים) — עוצרים ברגע שנמצאה סיבה
-            if (wanted.isNotEmpty()) {
-                runClassifier()
-                if (reasons.isEmpty()) runDetector()
-                // אנשים — גם פנים שנמצאו ישירות (תקריב שמודל הזיהוי לא סימן כאדם)
-                if (reasons.isEmpty() && ImageCategory.PEOPLE in wanted) {
+            // NudeNet רץ פעם אחת, והתוצאה משמשת גם לאנשים וגם לנשים
+            val nudeThr = nudeThreshold(cfg.sensitivity)
+            val found: List<NudeDetection> = nude?.let { model ->
+                try {
+                    model.detect(bmp, minOf(0.2f, nudeThr))
+                } catch (e: Throwable) {
+                    Log.w(TAG, "nudenet: ${e.message}")
+                    null
+                }
+            } ?: emptyList()
+            if (found.isNotEmpty()) {
+                note("NudeNet: " + found.sortedByDescending { it.score }.take(5).joinToString(", ") { "${it.label} ${f2(it.score)}" })
+            }
+
+            // 1) אנשים — פנים לפי NudeNet, או פנים לפי מודל הפנים
+            if (wantPeople) {
+                val nudeFace = found.any { (it.label == "FACE_FEMALE" || it.label == "FACE_MALE") && it.score >= nudeThr }
+                if (nudeFace) {
+                    reasons += "PEOPLE"
+                } else {
                     val n = findFaces(bmp, Rect(0, 0, bmp.width, bmp.height)).size
                     if (n > 0) {
                         note("פנים בתמונה: $n")
@@ -251,27 +124,13 @@ object ImageJudge {
                 }
             }
 
-            // 2) נשים — קודם NudeNet (הכי מדויק), ורק אם לא הכריע — שאר המודלים
+            // 2) נשים — קודם NudeNet, ורק אם לא הכריע — פנים + מודל מגדר + אחוז עור
             if (women != WomenLevel.OFF && reasons.isEmpty()) {
-                val womanFallback = {
-                    runDetector()
-                    checkWomen(
-                        bmp, persons, cfg.copy(women = WomenLevel.ALL),
-                        labelScore(CLS_FEMALE_HINTS), labelScore(CLS_SWIMWEAR), labelScore(CLS_REVEALING)
-                    )
-                }
-                if (nudeVerdict(bmp, cfg, womanFallback)) {
+                val womanFallback = { checkWomen(bmp, emptyList(), cfg.copy(women = WomenLevel.ALL), 0f, 0f, 0f) }
+                if (nudeVerdict(found, cfg, womanFallback)) {
                     reasons += "WOMEN_NUDENET"
-                } else {
-                    runDetector()
-                    if (checkWomen(
-                            bmp, persons, cfg,
-                            labelScore(CLS_FEMALE_HINTS), labelScore(CLS_SWIMWEAR), labelScore(CLS_REVEALING)
-                        )
-                    ) {
-                        // גיבוי: פנים + מודל מגדר + אחוז עור חשוף
-                        reasons += "WOMEN"
-                    }
+                } else if (checkWomen(bmp, emptyList(), cfg, 0f, 0f, 0f)) {
+                    reasons += "WOMEN"
                 }
             }
         } finally {
@@ -328,18 +187,8 @@ object ImageJudge {
      * ההחלטה לפי NudeNet. [womanSeenFallback] נקרא רק כשצריך לדעת אם יש אישה בתמונה
      * ו-NudeNet לא ראה פנים של אישה (למשל בטן חשופה בלי פנים).
      */
-    private fun nudeVerdict(bmp: Bitmap, cfg: ImageFilterConfig, womanSeenFallback: () -> Boolean): Boolean {
-        val model = nude ?: return false
+    private fun nudeVerdict(found: List<NudeDetection>, cfg: ImageFilterConfig, womanSeenFallback: () -> Boolean): Boolean {
         val thr = nudeThreshold(cfg.sensitivity)
-        val found = try {
-            model.detect(bmp, minOf(0.2f, thr))
-        } catch (e: Throwable) {
-            Log.w(TAG, "nudenet: ${e.message}")
-            return false
-        }
-        if (found.isNotEmpty()) {
-            note("NudeNet: " + found.sortedByDescending { it.score }.take(5).joinToString(", ") { "${it.label} ${f2(it.score)}" })
-        }
         fun has(label: String) = found.any { it.label == label && it.score >= thr }
         fun hasAny(labels: Set<String>) = labels.any { has(it) }
 
