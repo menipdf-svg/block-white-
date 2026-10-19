@@ -85,14 +85,45 @@ class WebFilter(context: Context, private val userAgent: String) {
         return ext in IMAGE_EXT
     }
 
+    /**
+     * מחזירים לדפדפן תשובה מיד, עם "זרם" שממלא את עצמו רק כשהדפדפן קורא ממנו.
+     * כך התהליכונים של הדפדפן לא נתקעים בהמתנה למודלים — והטקסט, הסקריפטים
+     * ושאר הדף ממשיכים להיטען בזמן שהתמונות נבדקות ברקע.
+     */
     private fun fetchAndFilter(request: WebResourceRequest, cfg: ImageFilterConfig): WebResourceResponse {
         val urlStr = request.url.toString()
+        val reqHeaders = HashMap(request.requestHeaders)
+        val ext = request.url.lastPathSegment?.substringAfterLast('.', "")?.lowercase() ?: ""
+        val mime = when (ext) {
+            "png" -> "image/png"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            "avif" -> "image/avif"
+            else -> "image/jpeg" // הדפדפן מזהה את סוג התמונה לפי התוכן בכל מקרה
+        }
+        val headers = mapOf(
+            "Access-Control-Allow-Origin" to "*",
+            "Cache-Control" to "no-store"
+        )
+        val stream = LazyStream {
+            try {
+                produce(urlStr, reqHeaders, cfg)
+            } catch (e: Exception) {
+                Log.w(TAG, "image $urlStr: ${e.message}")
+                ByteArray(0)
+            }
+        }
+        return WebResourceResponse(mime, null, 200, "OK", headers, stream)
+    }
+
+    /** מוריד את התמונה, בודק אותה, ומחזיר את הבתים שהדפדפן יקבל (המקור או משטח חסום) */
+    private fun produce(urlStr: String, reqHeaders: Map<String, String>, cfg: ImageFilterConfig): ByteArray {
         val conn = URL(urlStr).openConnection() as HttpURLConnection
         try {
             conn.instanceFollowRedirects = true
             conn.connectTimeout = 15_000
             conn.readTimeout = 20_000
-            request.requestHeaders.forEach { (k, v) ->
+            reqHeaders.forEach { (k, v) ->
                 if (!k.equals("Accept-Encoding", true) && !k.equals("Accept", true)) conn.setRequestProperty(k, v)
             }
             // AVIF אנדרואיד יודע לפענח רק מגרסה 12. בגרסאות ישנות מבקשים פורמט אחר, כדי שנוכל לבדוק
@@ -109,29 +140,17 @@ class WebFilter(context: Context, private val userAgent: String) {
             val finalHost = conn.url.host
             if (finalHost != null && !isAllowedHost(finalHost)) {
                 FilterState.block(uid, Rules.normalize(finalHost), true)
-                return empty(403, "Blocked")
+                return ByteArray(0)
             }
 
             conn.headerFields["Set-Cookie"]?.forEach { CookieManager.getInstance().setCookie(urlStr, it) }
 
-            val stream: InputStream? = if (code >= 400) conn.errorStream else conn.inputStream
-            val bytes = stream?.use { readLimited(it) } ?: ByteArray(0)
-            val contentType = conn.contentType ?: ""
-            val mime = contentType.substringBefore(';').trim().lowercase().ifEmpty { "application/octet-stream" }
-            val headers = responseHeaders(conn)
-            val reason = conn.responseMessage?.takeIf { it.isNotBlank() } ?: "OK"
+            if (code !in 200..299) return ByteArray(0)
+            val bytes = conn.inputStream.use { readLimited(it) }
+            val contentType = (conn.contentType ?: "").lowercase()
 
-            // שרתים מסוימים שולחים תמונה בלי סוג נכון — בודקים את התוכן עצמו
-            val looksDecodable = !mime.startsWith("image/") && code in 200..299 && run {
-                val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
-                o.outWidth > 0 && o.outHeight > 0
-            }
-
-            // לא תמונה, שגיאה, או SVG (גרפיקה וקטורית — אייקונים) → מעבירים כמו שזה
-            if (code !in 200..299 || (!mime.startsWith("image/") && !looksDecodable) || mime.contains("svg")) {
-                return WebResourceResponse(mime, charsetOf(contentType), code, reason, headers, ByteArrayInputStream(bytes))
-            }
+            // SVG (גרפיקה וקטורית — אייקונים) → מעבירים כמו שזה
+            if (contentType.contains("svg")) return bytes
 
             val key = cfg.hashCode().toString() + "|" + urlStr
             synchronized(verdicts) {
@@ -140,21 +159,30 @@ class WebFilter(context: Context, private val userAgent: String) {
                     verdictsFor = cfg
                 }
             }
-            val cached = verdicts.get(key)
-            if (cached == false) {
-                return WebResourceResponse(mime, null, code, reason, headers, ByteArrayInputStream(bytes))
-            }
+            if (verdicts.get(key) == false) return bytes
 
-            val blurred = judge(bytes, cfg, urlStr)
-            verdicts.put(key, blurred != null)
-            FilterState.imageChecked(blurred != null)
-            return if (blurred == null) {
-                WebResourceResponse(mime, null, code, reason, headers, ByteArrayInputStream(bytes))
-            } else {
-                WebResourceResponse(blurred.first, null, 200, "OK", headers, ByteArrayInputStream(blurred.second))
-            }
+            val blocked = judge(bytes, cfg, urlStr)
+            verdicts.put(key, blocked != null)
+            FilterState.imageChecked(blocked != null)
+            return blocked?.second ?: bytes
         } finally {
             conn.disconnect()
+        }
+    }
+
+    /** זרם שמחשב את התוכן שלו רק בקריאה הראשונה */
+    private class LazyStream(private val producer: () -> ByteArray) : InputStream() {
+        private var data: ByteArrayInputStream? = null
+
+        @Synchronized
+        private fun data(): ByteArrayInputStream =
+            data ?: ByteArrayInputStream(producer()).also { data = it }
+
+        override fun read(): Int = data().read()
+        override fun read(b: ByteArray, off: Int, len: Int): Int = data().read(b, off, len)
+        override fun available(): Int = data?.available() ?: 0
+        override fun close() {
+            data?.close()
         }
     }
 

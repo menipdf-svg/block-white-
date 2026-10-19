@@ -173,6 +173,7 @@ object ImageJudge {
         if (!ensure(ctx)) throw IllegalStateException(error ?: "המודל לא זמין")
         notes.clear()
         lastDetail = ""
+        val started = System.currentTimeMillis()
 
         val threshold = cfg.sensitivity.threshold
         val bmp = if (bitmap.config == Bitmap.Config.ARGB_8888) bitmap
@@ -181,78 +182,101 @@ object ImageJudge {
         val reasons = HashSet<String>()
         val imageArea = (bmp.width * bmp.height).toFloat()
 
-        try {
-            // 1) סיווג כל התמונה. סוכמים את הציונים לכל סוג, כי המודל מתפזר בין תוויות דומות
-            val labels = HashMap<String, Float>()
-            val cls = classifier
-            if (cls != null) {
-                val sums = HashMap<ImageCategory, Float>()
-                cls.classify(image).classificationResult().classifications().firstOrNull()?.categories()?.forEach { c ->
-                    val name = c.categoryName().lowercase()
-                    labels[name] = c.score()
-                    val cat = when {
-                        name in CLS_LANDSCAPES -> ImageCategory.LANDSCAPES
-                        name in CLS_VEHICLES -> ImageCategory.VEHICLES
-                        name in CLS_PEOPLE -> ImageCategory.PEOPLE
-                        c.index() in 1..LAST_ANIMAL_INDEX -> ImageCategory.ANIMALS
-                        else -> null
-                    }
-                    if (cat != null) sums[cat] = (sums[cat] ?: 0f) + c.score()
+        // כל מודל רץ רק כשצריך אותו, ולכל היותר פעם אחת
+        val labels = HashMap<String, Float>()
+        var classified = false
+        fun runClassifier() {
+            if (classified) return
+            classified = true
+            val cls = classifier ?: return
+            val sums = HashMap<ImageCategory, Float>()
+            cls.classify(image).classificationResult().classifications().firstOrNull()?.categories()?.forEach { c ->
+                val name = c.categoryName().lowercase()
+                labels[name] = c.score()
+                val cat = when {
+                    name in CLS_LANDSCAPES -> ImageCategory.LANDSCAPES
+                    name in CLS_VEHICLES -> ImageCategory.VEHICLES
+                    name in CLS_PEOPLE -> ImageCategory.PEOPLE
+                    c.index() in 1..LAST_ANIMAL_INDEX -> ImageCategory.ANIMALS
+                    else -> null
                 }
-                labels.entries.sortedByDescending { it.value }.take(3).takeIf { it.isNotEmpty() }?.let { top ->
-                    note("סיווג: " + top.joinToString(", ") { "${it.key} ${f2(it.value)}" })
-                }
-                sums.forEach { (cat, score) -> if (score >= threshold && cat in wanted) reasons += cat.name }
+                if (cat != null) sums[cat] = (sums[cat] ?: 0f) + c.score()
             }
-            fun labelScore(set: Set<String>) = labels.filterKeys { it in set }.values.sum()
+            labels.entries.sortedByDescending { it.value }.take(3).takeIf { it.isNotEmpty() }?.let { top ->
+                note("סיווג: " + top.joinToString(", ") { "${it.key} ${f2(it.value)}" })
+            }
+            sums.forEach { (cat, score) -> if (score >= threshold && cat in wanted) reasons += cat.name }
+        }
+        fun labelScore(set: Set<String>): Float {
+            runClassifier()
+            return labels.filterKeys { it in set }.values.sum()
+        }
 
-            // 2) זיהוי אובייקטים
-            val persons = ArrayList<RectF>()
-            val det = detector
-            if (det != null) {
-                for (d in det.detect(image).detections()) {
-                    val box = d.boundingBox()
-                    // אובייקט זעיר בפינה של התמונה לא נחשב
-                    if (box.width() * box.height() < imageArea * 0.005f) continue
-                    for (c in d.categories()) {
-                        if (c.score() >= 0.2f) note("זוהה: ${c.categoryName()} ${f2(c.score())}")
-                        when (c.categoryName().lowercase()) {
-                            in DET_PEOPLE -> {
-                                if (c.score() >= min(0.3f, threshold)) persons += box
-                                if (c.score() >= threshold && ImageCategory.PEOPLE in wanted) reasons += "PEOPLE"
-                            }
-                            in DET_VEHICLES -> if (c.score() >= threshold && ImageCategory.VEHICLES in wanted) reasons += "VEHICLES"
-                            in DET_ANIMALS -> if (c.score() >= threshold && ImageCategory.ANIMALS in wanted) reasons += "ANIMALS"
+        val persons = ArrayList<RectF>()
+        var detected = false
+        fun runDetector() {
+            if (detected) return
+            detected = true
+            val det = detector ?: return
+            for (d in det.detect(image).detections()) {
+                val box = d.boundingBox()
+                // אובייקט זעיר בפינה של התמונה לא נחשב
+                if (box.width() * box.height() < imageArea * 0.005f) continue
+                for (c in d.categories()) {
+                    if (c.score() >= 0.2f) note("זוהה: ${c.categoryName()} ${f2(c.score())}")
+                    when (c.categoryName().lowercase()) {
+                        in DET_PEOPLE -> {
+                            if (c.score() >= min(0.3f, threshold)) persons += box
+                            if (c.score() >= threshold && ImageCategory.PEOPLE in wanted) reasons += "PEOPLE"
                         }
+                        in DET_VEHICLES -> if (c.score() >= threshold && ImageCategory.VEHICLES in wanted) reasons += "VEHICLES"
+                        in DET_ANIMALS -> if (c.score() >= threshold && ImageCategory.ANIMALS in wanted) reasons += "ANIMALS"
+                    }
+                }
+            }
+        }
+
+        try {
+            // 1) קטגוריות (אנשים, נוף, רכב, בעלי חיים) — עוצרים ברגע שנמצאה סיבה
+            if (wanted.isNotEmpty()) {
+                runClassifier()
+                if (reasons.isEmpty()) runDetector()
+                // אנשים — גם פנים שנמצאו ישירות (תקריב שמודל הזיהוי לא סימן כאדם)
+                if (reasons.isEmpty() && ImageCategory.PEOPLE in wanted) {
+                    val n = findFaces(bmp, Rect(0, 0, bmp.width, bmp.height)).size
+                    if (n > 0) {
+                        note("פנים בתמונה: $n")
+                        reasons += "PEOPLE"
                     }
                 }
             }
 
-            // 2ב) אנשים — גם פנים שנמצאו ישירות (תקריב שמודל הזיהוי לא סימן כאדם)
-            if (ImageCategory.PEOPLE in wanted && "PEOPLE" !in reasons) {
-                val n = findFaces(bmp, Rect(0, 0, bmp.width, bmp.height)).size
-                if (n > 0) {
-                    note("פנים בתמונה: $n")
-                    reasons += "PEOPLE"
-                }
-            }
-
-            // 3) נשים — רק אם עוד לא הוחלט לטשטש
+            // 2) נשים — קודם NudeNet (הכי מדויק), ורק אם לא הכריע — שאר המודלים
             if (women != WomenLevel.OFF && reasons.isEmpty()) {
-                val hints = labelScore(CLS_FEMALE_HINTS)
-                val swim = labelScore(CLS_SWIMWEAR)
-                val revealing = labelScore(CLS_REVEALING)
-
-                // קודם NudeNet — הכי מדויק לנשים וללבוש
-                if (nudeVerdict(bmp, cfg) { checkWomen(bmp, persons, cfg.copy(women = WomenLevel.ALL), hints, swim, revealing) }) {
+                val womanFallback = {
+                    runDetector()
+                    checkWomen(
+                        bmp, persons, cfg.copy(women = WomenLevel.ALL),
+                        labelScore(CLS_FEMALE_HINTS), labelScore(CLS_SWIMWEAR), labelScore(CLS_REVEALING)
+                    )
+                }
+                if (nudeVerdict(bmp, cfg, womanFallback)) {
                     reasons += "WOMEN_NUDENET"
-                } else if (checkWomen(bmp, persons, cfg, hints, swim, revealing)) {
-                    // גיבוי: פנים + מודל מגדר + אחוז עור חשוף
-                    reasons += "WOMEN"
+                } else {
+                    runDetector()
+                    if (checkWomen(
+                            bmp, persons, cfg,
+                            labelScore(CLS_FEMALE_HINTS), labelScore(CLS_SWIMWEAR), labelScore(CLS_REVEALING)
+                        )
+                    ) {
+                        // גיבוי: פנים + מודל מגדר + אחוז עור חשוף
+                        reasons += "WOMEN"
+                    }
                 }
             }
         } finally {
             if (bmp !== bitmap) bmp.recycle()
+            note("זמן: ${System.currentTimeMillis() - started}ms")
             lastDetail = notes.joinToString(" · ")
         }
         return reasons
