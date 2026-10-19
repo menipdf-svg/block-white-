@@ -44,6 +44,13 @@ class WebFilter(context: Context, private val userAgent: String) {
         /** גודל מקסימלי לתמונה המטושטשת שמחזירים */
         private const val MAX_OUT_SIDE = 1600
 
+        /** תמונה שקופה בגודל פיקסל — במקום אייקון "תמונה שבורה" כשמשהו נכשל */
+        private val TRANSPARENT_GIF = byteArrayOf(
+            0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80.toByte(), 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 0xF9.toByte(), 0x04, 0x01, 0x00, 0x00, 0x00, 0x00,
+            0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3B
+        )
+
         private val IMAGE_EXT = setOf("jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "heic", "heif")
         private val SKIP_HEADERS = setOf("content-encoding", "content-length", "transfer-encoding", "set-cookie", "content-type")
     }
@@ -94,7 +101,7 @@ class WebFilter(context: Context, private val userAgent: String) {
             fetchAndFilter(request, cfg)
         } catch (e: Exception) {
             Log.w(TAG, "image ${url}: ${e.message}")
-            empty(502, "Image check failed")
+            empty(502, "Bad Gateway")
         }
     }
 
@@ -106,87 +113,128 @@ class WebFilter(context: Context, private val userAgent: String) {
     }
 
     /**
-     * מחזירים לדפדפן תשובה מיד, עם "זרם" שממלא את עצמו רק כשהדפדפן קורא ממנו.
-     * כך התהליכונים של הדפדפן לא נתקעים בהמתנה למודלים — והטקסט, הסקריפטים
-     * ושאר הדף ממשיכים להיטען בזמן שהתמונות נבדקות ברקע.
+     * בקשת תמונה:
+     *  1. אם התמונה כבר נבדקה (מטמון בדיסק) — מחזירים אותה מיד.
+     *  2. אחרת פותחים חיבור לשרת ומחכים רק לתשובה הראשונה שלו (קוד, סוג, כותרות) — כמו דפדפן רגיל.
+     *     כך הדפדפן מקבל את הסוג והכותרות האמיתיים, ושום דבר בדף לא נשבר.
+     *  3. התוכן עצמו נקרא ונבדק במודלים רק כשהדפדפן קורא ממנו — ברקע, בלי לתקוע את שאר הדף.
      */
-    private fun fetchAndFilter(request: WebResourceRequest, cfg: ImageFilterConfig): WebResourceResponse {
+    private fun fetchAndFilter(request: WebResourceRequest, cfg: ImageFilterConfig): WebResourceResponse? {
         val urlStr = request.url.toString()
-        val reqHeaders = HashMap(request.requestHeaders)
-        val ext = request.url.lastPathSegment?.substringAfterLast('.', "")?.lowercase() ?: ""
-        val mime = when (ext) {
-            "png" -> "image/png"
-            "gif" -> "image/gif"
-            "webp" -> "image/webp"
-            "avif" -> "image/avif"
-            else -> "image/jpeg" // הדפדפן מזהה את סוג התמונה לפי התוכן בכל מקרה
+        val origin = request.requestHeaders.entries.firstOrNull { it.key.equals("Origin", true) }?.value
+
+        DiskImageCache.get(ctx, cfg, urlStr)?.let { cached ->
+            return WebResourceResponse(sniffMime(cached), null, 200, "OK", corsHeaders(origin, null), ByteArrayInputStream(cached))
         }
-        val headers = mapOf(
-            "Access-Control-Allow-Origin" to "*",
-            "Cache-Control" to "no-store"
+
+        val conn = URL(urlStr).openConnection() as HttpURLConnection
+        conn.instanceFollowRedirects = true
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 20_000
+        request.requestHeaders.forEach { (k, v) ->
+            if (!k.equals("Accept-Encoding", true) && !k.equals("Accept", true)) conn.setRequestProperty(k, v)
+        }
+        // AVIF אנדרואיד יודע לפענח רק מגרסה 12. בגרסאות ישנות מבקשים פורמט אחר, כדי שנוכל לבדוק
+        conn.setRequestProperty(
+            "Accept",
+            if (Build.VERSION.SDK_INT >= 31) "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+            else "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
         )
+        if (conn.getRequestProperty("User-Agent") == null) conn.setRequestProperty("User-Agent", userAgent)
+        CookieManager.getInstance().getCookie(urlStr)?.let { conn.setRequestProperty("Cookie", it) }
+
+        val code = try {
+            conn.responseCode
+        } catch (e: Exception) {
+            conn.disconnect()
+            Log.w(TAG, "image $urlStr: ${e.message}")
+            return empty(502, "Bad Gateway")
+        }
+
+        // הפניה לדומיין אחר — גם הוא צריך להיות ברשימה
+        val finalHost = conn.url.host
+        if (finalHost != null && !isAllowedHost(finalHost)) {
+            conn.disconnect()
+            FilterState.block(uid, Rules.normalize(finalHost), true)
+            return empty(403, "Blocked")
+        }
+        conn.headerFields["Set-Cookie"]?.forEach { CookieManager.getInstance().setCookie(urlStr, it) }
+
+        val contentType = conn.contentType ?: ""
+        val mime = contentType.substringBefore(';').trim().lowercase().ifEmpty { "application/octet-stream" }
+        val reason = conn.responseMessage?.takeIf { it.isNotBlank() } ?: "OK"
+        val headers = corsHeaders(origin, conn)
+
+        // שגיאה מהשרת, SVG, או בכלל לא תמונה — מעבירים בדיוק כמו שהם, עם הסוג והכותרות המקוריים
+        val isRaster = mime.startsWith("image/") && !mime.contains("svg")
+        val maybeImage = isRaster || mime == "application/octet-stream" || mime == "binary/octet-stream"
+        if (code !in 200..299 || !maybeImage) {
+            val body: InputStream = (if (code >= 400) conn.errorStream else conn.inputStream)
+                ?: ByteArrayInputStream(ByteArray(0))
+            return WebResourceResponse(mime, charsetOf(contentType), code, reason, headers, ClosingStream(body, conn))
+        }
+
         val stream = LazyStream {
             try {
-                produce(urlStr, reqHeaders, cfg)
+                val bytes = conn.inputStream.use { readLimited(it) }
+                if (bytes.isEmpty()) return@LazyStream bytes
+                val blocked = judge(bytes, cfg, urlStr)
+                FilterState.imageChecked(blocked != null)
+                val out = blocked?.second ?: bytes
+                DiskImageCache.put(ctx, cfg, urlStr, out)
+                out
             } catch (e: Exception) {
                 Log.w(TAG, "image $urlStr: ${e.message}")
-                ByteArray(0)
+                TRANSPARENT_GIF
+            } finally {
+                conn.disconnect()
             }
         }
-        return WebResourceResponse(mime, null, 200, "OK", headers, stream)
+        return WebResourceResponse(if (isRaster) mime else "image/jpeg", null, code, reason, headers, stream)
     }
 
-    /** מוריד את התמונה, בודק אותה, ומחזיר את הבתים שהדפדפן יקבל (המקור או משטח חסום) */
-    private fun produce(urlStr: String, reqHeaders: Map<String, String>, cfg: ImageFilterConfig): ByteArray {
-        // תמונה שכבר נבדקה (גם בפעם קודמת שהאפליקציה רצה) — מגיעה מיד מהדיסק, בלי הורדה ובלי מודלים
-        DiskImageCache.get(ctx, cfg, urlStr)?.let { return it }
-        val result = download(urlStr, reqHeaders, cfg)
-        if (result.second) DiskImageCache.put(ctx, cfg, urlStr, result.first)
-        return result.first
+    /**
+     * כותרות CORS: מעבירים את המקוריות של השרת. אם אין — מאפשרים למקור של הדף,
+     * כולל תמונות שנטענות עם הרשאות (crossorigin="use-credentials").
+     */
+    private fun corsHeaders(origin: String?, conn: HttpURLConnection?): Map<String, String> {
+        val map = HashMap<String, String>()
+        conn?.headerFields?.forEach { (k, v) ->
+            if (k != null && v != null && k.startsWith("Access-Control-", true)) map[k] = v.joinToString(", ")
+        }
+        if (map.keys.none { it.equals("Access-Control-Allow-Origin", true) }) {
+            if (origin != null && origin != "null") {
+                map["Access-Control-Allow-Origin"] = origin
+                map["Access-Control-Allow-Credentials"] = "true"
+            } else {
+                map["Access-Control-Allow-Origin"] = "*"
+            }
+        }
+        map["Cache-Control"] = "no-store"
+        return map
     }
 
-    /** מוריד ובודק. מחזיר (בתים, האם לשמור במטמון) */
-    private fun download(urlStr: String, reqHeaders: Map<String, String>, cfg: ImageFilterConfig): Pair<ByteArray, Boolean> {
-        val conn = URL(urlStr).openConnection() as HttpURLConnection
-        try {
-            conn.instanceFollowRedirects = true
-            conn.connectTimeout = 15_000
-            conn.readTimeout = 20_000
-            reqHeaders.forEach { (k, v) ->
-                if (!k.equals("Accept-Encoding", true) && !k.equals("Accept", true)) conn.setRequestProperty(k, v)
+    /** זיהוי סוג התמונה לפי הבתים הראשונים (לתמונות מהמטמון) */
+    private fun sniffMime(b: ByteArray): String = when {
+        b.size >= 3 && b[0] == 0xFF.toByte() && b[1] == 0xD8.toByte() -> "image/jpeg"
+        b.size >= 8 && b[0] == 0x89.toByte() && b[1] == 'P'.code.toByte() -> "image/png"
+        b.size >= 6 && b[0] == 'G'.code.toByte() && b[1] == 'I'.code.toByte() -> "image/gif"
+        b.size >= 12 && b[8] == 'W'.code.toByte() && b[9] == 'E'.code.toByte() -> "image/webp"
+        b.size >= 12 && b[4] == 'f'.code.toByte() && b[5] == 't'.code.toByte() -> "image/avif"
+        else -> "image/jpeg"
+    }
+
+    /** זרם שסוגר גם את החיבור כשהדפדפן מסיים לקרוא */
+    private class ClosingStream(private val inner: InputStream, private val conn: HttpURLConnection) : InputStream() {
+        override fun read(): Int = inner.read()
+        override fun read(b: ByteArray, off: Int, len: Int): Int = inner.read(b, off, len)
+        override fun available(): Int = inner.available()
+        override fun close() {
+            try {
+                inner.close()
+            } finally {
+                conn.disconnect()
             }
-            // AVIF אנדרואיד יודע לפענח רק מגרסה 12. בגרסאות ישנות מבקשים פורמט אחר, כדי שנוכל לבדוק
-            conn.setRequestProperty(
-                "Accept",
-                if (Build.VERSION.SDK_INT >= 31) "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
-                else "image/webp,image/apng,image/*,*/*;q=0.8"
-            )
-            if (conn.getRequestProperty("User-Agent") == null) conn.setRequestProperty("User-Agent", userAgent)
-            CookieManager.getInstance().getCookie(urlStr)?.let { conn.setRequestProperty("Cookie", it) }
-
-            val code = conn.responseCode
-            // הפניה לדומיין אחר — גם הוא צריך להיות ברשימה
-            val finalHost = conn.url.host
-            if (finalHost != null && !isAllowedHost(finalHost)) {
-                FilterState.block(uid, Rules.normalize(finalHost), true)
-                return ByteArray(0) to false
-            }
-
-            conn.headerFields["Set-Cookie"]?.forEach { CookieManager.getInstance().setCookie(urlStr, it) }
-
-            if (code !in 200..299) return ByteArray(0) to false
-            val bytes = conn.inputStream.use { readLimited(it) }
-            if (bytes.isEmpty()) return bytes to false
-            val contentType = (conn.contentType ?: "").lowercase()
-
-            // SVG (גרפיקה וקטורית — אייקונים) → מעבירים כמו שזה
-            if (contentType.contains("svg")) return bytes to false
-
-            val blocked = judge(bytes, cfg, urlStr)
-            FilterState.imageChecked(blocked != null)
-            return (blocked?.second ?: bytes) to true
-        } finally {
-            conn.disconnect()
         }
     }
 

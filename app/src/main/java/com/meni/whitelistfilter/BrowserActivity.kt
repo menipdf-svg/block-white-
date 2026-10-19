@@ -173,23 +173,35 @@ private val INLINE_IMAGE_SCRIPT = """
     var p = pending[id];
     if (!p) return;
     delete pending[id];
+    if (p.bg) {
+      // תמונת רקע: מחזירים אותה, או צובעים באפור
+      p.el.__wlfBg = p.src;
+      if (blocked) { p.el.style.backgroundImage = 'none'; p.el.style.backgroundColor = '#c8c8c8'; }
+      else p.el.style.backgroundImage = p.orig;
+      return;
+    }
     var img = p.img;
     // אם בינתיים התמונה הוחלפה במשהו אחר — הבדיקה הזו כבר לא רלוונטית
     if ((img.currentSrc || img.src) !== p.src) { img.style.visibility = ''; chk(img); return; }
     img.__wlfOk = !blocked ? p.src : null;
     if (blocked) block(img); else img.style.visibility = '';
   };
+  // שולח לבדיקה. אם אין תשובה תוך 10 שניות — מתייחסים כחסום, כדי שלא תישאר תמונה מוסתרת לנצח
+  function sendData(id, src) {
+    setTimeout(function() { if (pending[id]) window.__wlfDone(id, true); }, 10000);
+    if (src.indexOf('blob:') === 0) {
+      fetch(src).then(function(r) { return r.blob(); }).then(function(b) {
+        return new Promise(function(res) { var fr = new FileReader(); fr.onload = function() { res(fr.result); }; fr.readAsDataURL(b); });
+      }).then(function(d) { WLF.check(id, d); }).catch(function() { window.__wlfDone(id, true); });
+    } else {
+      WLF.check(id, src);
+    }
+  }
   function send(img, src) {
     var id = 'i' + (++seq);
     pending[id] = { img: img, src: src };
     img.style.visibility = 'hidden';
-    if (src.indexOf('blob:') === 0) {
-      fetch(src).then(function(r) { return r.blob(); }).then(function(b) {
-        return new Promise(function(res) { var fr = new FileReader(); fr.onload = function() { res(fr.result); }; fr.readAsDataURL(b); });
-      }).then(function(d) { WLF.check(id, d); }).catch(function() { delete pending[id]; block(img); });
-    } else {
-      WLF.check(id, src);
-    }
+    sendData(id, src);
   }
   function chk(img) {
     try {
@@ -201,13 +213,20 @@ private val INLINE_IMAGE_SCRIPT = """
       send(img, s);
     } catch (e) {}
   }
+  // תמונת רקע מוטמעת: אייקונים קטנים לא נוגעים בהם; גדולות נשלחות לבדיקה
   function bg(el) {
     try {
       var b = el.style && el.style.backgroundImage;
-      if (b && (b.indexOf('data:image') >= 0 && b.indexOf('svg') < 0 || b.indexOf('blob:') >= 0)) {
-        el.style.backgroundImage = 'none';
-        el.style.backgroundColor = '#c8c8c8';
-      }
+      if (!b || b === 'none') return;
+      var m = b.match(/url\(["']?(data:image\/(?!svg)[^"')]+|blob:[^"')]+)/);
+      if (!m || el.__wlfBg === m[1]) return;
+      for (var k in pending) if (pending[k].el === el) return;
+      var r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0 && (r.width < 64 || r.height < 64)) return;
+      var id = 'b' + (++seq);
+      pending[id] = { bg: true, el: el, src: m[1], orig: b };
+      el.style.backgroundImage = 'none';
+      sendData(id, m[1]);
     } catch (e) {}
   }
   function scan(root) {
