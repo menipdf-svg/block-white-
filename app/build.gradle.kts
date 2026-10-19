@@ -179,5 +179,5 @@ dependencies {
     // הרצת NudeNet (מודל ONNX)
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     // מנוע Firefox לדפדפן הניסיוני
-    implementation("org.mozilla.geckoview:geckoview:158.0.20261007201254")
+    implementation("org.mozilla.geckoview:geckoview:140.0.20250707120347")
 }
