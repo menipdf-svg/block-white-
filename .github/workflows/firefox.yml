@@ -1,0 +1,102 @@
+name: Build Firefox (filtered)
+
+# בונה את פיירפוקס לאנדרואיד (Fenix) מהקוד של מוזילה, עם השינויים שבתיקייה firefox-fork.
+# הבנייה ארוכה (כשעה), ולכן היא רצה רק כשמשנים משהו בתיקייה הזו, או ידנית.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "firefox-fork/**"
+      - ".github/workflows/firefox.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: firefox-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      # הקוד של פיירפוקס והבנייה תופסים הרבה מקום — מפנים כלים שלא צריך
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/node_modules /opt/ghc /usr/local/.ghcup \
+                      /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium \
+                      /opt/hostedtoolcache/CodeQL /usr/local/graalvm /usr/local/julia* || true
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - name: Fetch Firefox source
+        run: |
+          FF_REV=$(cat firefox-fork/FIREFOX_REVISION)
+          mkdir -p "$HOME/ff" && cd "$HOME/ff"
+          git init -q
+          git remote add origin https://github.com/mozilla-firefox/firefox
+          git fetch -q --depth 1 origin "$FF_REV"
+          git checkout -q FETCH_HEAD
+          git log -1 --format='%H %cd'
+          df -h /
+
+      - name: Configure (artifact build for arm64)
+        run: |
+          cp firefox-fork/mozconfig "$HOME/ff/mozconfig"
+          cat "$HOME/ff/mozconfig"
+
+      - name: Bootstrap
+        working-directory: /home/runner/ff
+        run: |
+          set -o pipefail
+          ./mach --no-interactive bootstrap --application-choice="GeckoView/Firefox for Android Artifact Mode" 2>&1 \
+            | tee "$GITHUB_WORKSPACE/firefox-build.log" | tail -n 80
+
+      - name: Apply our changes
+        run: |
+          bash firefox-fork/apply.sh "$HOME/ff"
+
+      - name: Build Gecko (prebuilt artifacts)
+        working-directory: /home/runner/ff
+        run: |
+          set -o pipefail
+          ./mach build 2>&1 | tee -a "$GITHUB_WORKSPACE/firefox-build.log" | tail -n 200
+
+      - name: Build Fenix
+        working-directory: /home/runner/ff
+        run: |
+          set -o pipefail
+          ./mach gradle :fenix:assembleDebug 2>&1 | tee -a "$GITHUB_WORKSPACE/firefox-build.log" | tail -n 150
+          find . -path '*fenix*' -name '*.apk' -newer mozconfig | head -20
+
+      - name: Collect APK
+        run: |
+          APK=$(find "$HOME/ff" -path '*fenix*' -name '*arm64*debug*.apk' | head -1)
+          [ -z "$APK" ] && APK=$(find "$HOME/ff" -path '*fenix*' -name '*.apk' | head -1)
+          echo "APK: $APK"
+          cp "$APK" "$GITHUB_WORKSPACE/firefox-filtered.apk"
+          ls -la "$GITHUB_WORKSPACE/firefox-filtered.apk"
+
+      - name: Publish to "firefox-latest" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: firefox-latest
+          name: פיירפוקס מסונן — גרסה אחרונה
+          body: נבנה אוטומטית מ-${{ github.sha }}
+          prerelease: true
+          make_latest: false
+          files: firefox-filtered.apk
+
+      - name: Publish build log on failure
+        if: failure()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: firefox-build-log
+          name: לוג בנייה של פיירפוקס שנכשלה
+          prerelease: true
+          make_latest: false
+          files: firefox-build.log
