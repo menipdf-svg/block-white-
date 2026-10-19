@@ -35,8 +35,8 @@ android {
         applicationId = "com.meni.whitelistfilter"
         minSdk = 29
         targetSdk = 35
-        versionCode = 10
-        versionName = "3.7"
+        versionCode = 11
+        versionName = "3.8"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -89,7 +89,7 @@ android {
 
     // המודלים נטענים ישירות מהזיכרון, אז אסור לדחוס אותם
     androidResources {
-        noCompress += "tflite"
+        noCompress += listOf("tflite", "onnx")
     }
 }
 
@@ -104,7 +104,10 @@ val modelFiles = mapOf(
         "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite",
     // מודל מגדר: Age-Gender_Estimation_TF-Android של Shubham Panchal, רישיון MIT
     "gender.tflite" to
-        "https://raw.githubusercontent.com/shubham0204/Age-Gender_Estimation_TF-Android/48365bc1a541f3ac47b08bf85537849c5fc323e9/app/src/main/assets/model_gender_nonq.tflite"
+        "https://raw.githubusercontent.com/shubham0204/Age-Gender_Estimation_TF-Android/48365bc1a541f3ac47b08bf85537849c5fc323e9/app/src/main/assets/model_gender_nonq.tflite",
+    // NudeNet של notAI-tech, רישיון AGPL-3.0
+    "nudenet_320n.onnx" to
+        "https://raw.githubusercontent.com/notAI-tech/NudeNet/6ccc81c6c305cccfd46d92b414f8a5c0a816574d/nudenet/320n.onnx"
 )
 
 val downloadModels by tasks.registering {
@@ -146,4 +149,6 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite:2.16.1")
     // סקריפט שרץ בתחילת כל דף (לחסימת תמונות מוטמעות)
     implementation("androidx.webkit:webkit:1.12.1")
+    // הרצת NudeNet (מודל ONNX)
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
 }

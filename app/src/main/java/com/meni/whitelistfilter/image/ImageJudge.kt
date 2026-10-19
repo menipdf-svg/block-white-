@@ -21,6 +21,7 @@ import kotlin.math.roundToInt
  *  - EfficientNet-Lite0 — מסווג את כל התמונה (נוף, בגד ים, שמלה, סוג רכב...)
  *  - BlazeFace — מוצא פנים
  *  - מודל מגדר — מקבל פנים ומחזיר אם זו אישה
+ *  - NudeNet — פנים של אישה ואזורי גוף חשופים/מכוסים (הכי מדויק לסינון נשים)
  * בנוסף, לכל אישה מחושב כמה מהגוף חשוף (לפי צבע עור), לרמות "בגד ים" ו"לבוש חלקי".
  */
 object ImageJudge {
@@ -29,11 +30,13 @@ object ImageJudge {
     private const val CLASSIFIER = "models/efficientnet_lite0.tflite"
     private const val FACES = "models/blaze_face_short_range.tflite"
     private const val GENDER = "models/gender.tflite"
+    private const val NUDE = "models/nudenet_320n.onnx"
 
     private var detector: ObjectDetector? = null
     private var classifier: ImageClassifier? = null
     private var faces: FaceDetector? = null
     private var gender: GenderModel? = null
+    private var nude: NudeModel? = null
     private var loaded = false
 
     @Volatile
@@ -140,6 +143,12 @@ object ImageJudge {
             errors += "מודל המגדר לא נטען: ${e.message}"
             Log.e(TAG, "gender", e)
         }
+        try {
+            nude = NudeModel(ctx, NUDE)
+        } catch (e: Throwable) {
+            errors += "מודל NudeNet לא נטען: ${e.message}"
+            Log.e(TAG, "nude", e)
+        }
         error = errors.takeIf { it.isNotEmpty() }?.joinToString("\n")
         return detector != null || classifier != null
     }
@@ -214,7 +223,15 @@ object ImageJudge {
 
             // 3) נשים — רק אם עוד לא הוחלט לטשטש
             if (women != WomenLevel.OFF && reasons.isEmpty()) {
-                if (checkWomen(bmp, persons, cfg, labelScore(CLS_FEMALE_HINTS), labelScore(CLS_SWIMWEAR), labelScore(CLS_REVEALING))) {
+                val hints = labelScore(CLS_FEMALE_HINTS)
+                val swim = labelScore(CLS_SWIMWEAR)
+                val revealing = labelScore(CLS_REVEALING)
+
+                // קודם NudeNet — הכי מדויק לנשים וללבוש
+                if (nudeVerdict(bmp, cfg) { checkWomen(bmp, persons, cfg.copy(women = WomenLevel.ALL), hints, swim, revealing) }) {
+                    reasons += "WOMEN_NUDENET"
+                } else if (checkWomen(bmp, persons, cfg, hints, swim, revealing)) {
+                    // גיבוי: פנים + מודל מגדר + אחוז עור חשוף
                     reasons += "WOMEN"
                 }
             }
@@ -248,6 +265,57 @@ object ImageJudge {
             Sensitivity.HIGH -> 0.08f
         }
         else -> 0f
+    }
+
+    // ----- NudeNet -----
+
+    private val NUDE_EXPLICIT = setOf(
+        "FEMALE_BREAST_EXPOSED", "FEMALE_GENITALIA_EXPOSED", "BUTTOCKS_EXPOSED",
+        "ANUS_EXPOSED", "MALE_GENITALIA_EXPOSED"
+    )
+
+    /** תוויות שמעידות בעצמן על אישה בלבוש של בגד ים / תחתון */
+    private val NUDE_FEMALE_SWIMWEAR = setOf("FEMALE_BREAST_COVERED", "FEMALE_GENITALIA_COVERED", "BUTTOCKS_COVERED")
+
+    private fun nudeThreshold(s: Sensitivity) = when (s) {
+        Sensitivity.LOW -> 0.5f
+        Sensitivity.MEDIUM -> 0.35f
+        Sensitivity.HIGH -> 0.25f
+    }
+
+    /**
+     * ההחלטה לפי NudeNet. [womanSeenFallback] נקרא רק כשצריך לדעת אם יש אישה בתמונה
+     * ו-NudeNet לא ראה פנים של אישה (למשל בטן חשופה בלי פנים).
+     */
+    private fun nudeVerdict(bmp: Bitmap, cfg: ImageFilterConfig, womanSeenFallback: () -> Boolean): Boolean {
+        val model = nude ?: return false
+        val thr = nudeThreshold(cfg.sensitivity)
+        val found = try {
+            model.detect(bmp, minOf(0.2f, thr))
+        } catch (e: Throwable) {
+            Log.w(TAG, "nudenet: ${e.message}")
+            return false
+        }
+        fun has(label: String) = found.any { it.label == label && it.score >= thr }
+        fun hasAny(labels: Set<String>) = labels.any { has(it) }
+
+        // תוכן מפורש — נחסם בכל רמה
+        if (hasAny(NUDE_EXPLICIT)) return true
+
+        val femaleFace = has("FACE_FEMALE")
+        val femaleSwimwear = hasAny(NUDE_FEMALE_SWIMWEAR)
+        val belly = has("BELLY_EXPOSED")
+        val armpits = has("ARMPITS_EXPOSED")
+
+        // האם יש כאן אישה — לפי NudeNet, ואם לא בטוח לפי שאר המודלים
+        val womanSeen by lazy { femaleFace || femaleSwimwear || womanSeenFallback() }
+
+        return when (cfg.women) {
+            WomenLevel.ALL -> femaleFace || femaleSwimwear
+            WomenLevel.SWIMWEAR -> femaleSwimwear || (belly && womanSeen)
+            WomenLevel.PARTIAL -> femaleSwimwear || ((belly || armpits) && womanSeen)
+            WomenLevel.OFF -> false
+        }
     }
 
     private fun checkWomen(
