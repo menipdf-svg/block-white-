@@ -3,6 +3,7 @@
 package com.meni.whitelistfilter.ui
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,6 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.meni.whitelistfilter.BrowserActivity
 import com.meni.whitelistfilter.FilterState
+import com.meni.whitelistfilter.image.ImageCache
 import com.meni.whitelistfilter.image.ImageCategory
 import com.meni.whitelistfilter.image.ImageFilterSettings
 import com.meni.whitelistfilter.image.ImageJudge
@@ -68,6 +70,14 @@ fun ImagesScreen(onBrowserDomains: () -> Unit) {
                         onClick = { ctx.startActivity(Intent(ctx, BrowserActivity::class.java)) },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("🌐 פתח את הדפדפן המסונן") }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            ImageCache.clear(ctx)
+                            Toast.makeText(ctx, "התמונות נמחקו מהמטמון", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("🗑️ מחק תמונות מהמטמון") }
                 }
             }
         }

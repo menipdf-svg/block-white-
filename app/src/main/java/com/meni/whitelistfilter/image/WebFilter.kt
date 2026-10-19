@@ -155,7 +155,7 @@ class WebFilter(context: Context, private val userAgent: String) {
             // SVG (גרפיקה וקטורית — אייקונים) → מעבירים כמו שזה
             if (contentType.contains("svg")) return bytes
 
-            val key = cfg.hashCode().toString() + "|" + urlStr
+            val key = "${FilterState.cacheGeneration.value}|${cfg.hashCode()}|$urlStr"
             synchronized(verdicts) {
                 if (verdictsFor != cfg) {
                     verdicts.evictAll()

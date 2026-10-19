@@ -80,6 +80,7 @@ import com.meni.whitelistfilter.browser.BrowserStore
 import com.meni.whitelistfilter.browser.DownloadStatus
 import com.meni.whitelistfilter.browser.Downloads
 import com.meni.whitelistfilter.browser.PageEntry
+import com.meni.whitelistfilter.image.ImageCache
 import com.meni.whitelistfilter.image.ImageFilterSettings
 import com.meni.whitelistfilter.image.WebFilter
 import java.net.URLEncoder
@@ -697,6 +698,12 @@ class BrowserActivity : ComponentActivity() {
                         MenuItem("🕘  היסטוריה") { menu = false; screen = Screen.HISTORY }
                         MenuItem("⬇️  הורדות") { menu = false; screen = Screen.DOWNLOADS }
                         MenuItem("🔍  חיפוש בדף") { menu = false; findOpen = true }
+                        MenuItem("🗑️  מחק תמונות מהמטמון") {
+                            menu = false
+                            ImageCache.clear(this@BrowserActivity)
+                            if (tab.url.isNotBlank()) tab.web.reload()
+                            Toast.makeText(this@BrowserActivity, "התמונות נמחקו מהמטמון", Toast.LENGTH_SHORT).show()
+                        }
                         if (tab.url.isNotBlank()) {
                             MenuItem("📤  שיתוף") {
                                 menu = false

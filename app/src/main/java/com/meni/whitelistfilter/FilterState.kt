@@ -93,6 +93,13 @@ object FilterState {
         imageLog.update { (listOf(e) + it).take(150) }
     }
 
+    /** משתנה בכל מחיקת מטמון — ההחלטות השמורות על תמונות מתאפסות */
+    val cacheGeneration = MutableStateFlow(0)
+
+    fun clearImageCache() {
+        cacheGeneration.update { it + 1 }
+    }
+
     fun clearImageLog() {
         imageLog.value = emptyList()
     }
