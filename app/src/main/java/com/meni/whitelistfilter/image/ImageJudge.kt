@@ -14,22 +14,23 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * המודלים המקומיים. כולם רצים על המכשיר, בלי אינטרנט:
- *  - NudeNet — פנים של אישה/גבר ואזורי גוף חשופים/מכוסים (המודל הראשי)
- *  - BlazeFace — מוצא פנים (לקטגוריית "אנשים" ולגיבוי של סינון הנשים)
- *  - מודל מגדר — מקבל פנים ומחזיר אם זו אישה (גיבוי כש-NudeNet לא הכריע)
- * בנוסף, לכל אישה מחושב כמה מהגוף חשוף (לפי צבע עור), לרמה "לבוש חלקי".
+ * המודלים המקומיים, במפל של שני שלבים:
+ *  1. NudeNet 320n (קטן ומהיר) רץ על כל תמונה ונותן סבירות שיש בה אישה.
+ *     אם הסבירות נמוכה מהשער — התמונה עוברת מיד.
+ *  2. NudeNet 640m (גדול ומדויק) רץ רק על התמונות החשודות, ומחליט.
+ * בנוסף: BlazeFace לקטגוריית "אנשים", ואחוז עור חשוף לרמה "לבוש חלקי".
  */
 object ImageJudge {
     private const val TAG = "ImageJudge"
     private const val FACES = "models/blaze_face_short_range.tflite"
-    private const val GENDER = "models/gender.tflite"
-    private const val NUDE = "models/nudenet_320n.onnx"
+    private const val NUDE_LIGHT = "models/nudenet_320n.onnx"
+    private const val NUDE_HEAVY = "models/nudenet_640m.onnx"
 
     private var faces: FaceDetector? = null
-    private var gender: GenderModel? = null
-    private var nude: NudeModel? = null
+    private var light: NudeModel? = null
+    private var heavy: NudeModel? = null
     private var loaded = false
+    private var heavyLoaded = false
 
     @Volatile
     var error: String? = null
@@ -43,16 +44,50 @@ object ImageJudge {
     private fun note(s: String) { notes += s }
     private fun f2(x: Float) = String.format(java.util.Locale.US, "%.2f", x)
 
+    // ----- תוויות NudeNet -----
+
+    private val EXPLICIT = setOf(
+        "FEMALE_BREAST_EXPOSED", "FEMALE_GENITALIA_EXPOSED", "BUTTOCKS_EXPOSED",
+        "ANUS_EXPOSED", "MALE_GENITALIA_EXPOSED"
+    )
+
+    /** תוויות שמעידות בעצמן על אישה בבגד ים / תחתון */
+    private val FEMALE_SWIMWEAR = setOf("FEMALE_BREAST_COVERED", "FEMALE_GENITALIA_COVERED", "BUTTOCKS_COVERED")
+
+    /** כל מה שמרמז שיש אישה בתמונה — לשער של המודל הקטן */
+    private val FEMALE_SIGNALS = setOf("FACE_FEMALE") + FEMALE_SWIMWEAR + EXPLICIT
+
+    /** שער המודל הקטן: מעל זה התמונה נשלחת למודל הגדול */
+    private fun gate(s: Sensitivity) = when (s) {
+        Sensitivity.LOW -> 0.6f
+        Sensitivity.MEDIUM -> 0.5f
+        Sensitivity.HIGH -> 0.3f
+    }
+
+    /** הסף של המודל הגדול להחלטה הסופית */
+    private fun decide(s: Sensitivity) = when (s) {
+        Sensitivity.LOW -> 0.55f
+        Sensitivity.MEDIUM -> 0.45f
+        Sensitivity.HIGH -> 0.35f
+    }
+
+    /** איזה חלק מהגוף (בלי הפנים) צריך להיות חשוף כדי לחסום ברמה "לבוש חלקי" */
+    private fun partialSkin(s: Sensitivity) = when (s) {
+        Sensitivity.LOW -> 0.18f
+        Sensitivity.MEDIUM -> 0.13f
+        Sensitivity.HIGH -> 0.09f
+    }
+
     @Synchronized
     private fun ensure(ctx: Context): Boolean {
-        if (loaded) return nude != null || faces != null
+        if (loaded) return light != null || faces != null
         loaded = true
         val errors = ArrayList<String>()
         try {
-            nude = NudeModel(ctx, NUDE)
+            light = NudeModel(ctx, NUDE_LIGHT, 320)
         } catch (e: Throwable) {
-            errors += "מודל NudeNet לא נטען: ${e.message}"
-            Log.e(TAG, "nude", e)
+            errors += "NudeNet 320n לא נטען: ${e.message}"
+            Log.e(TAG, "light", e)
         }
         try {
             faces = FaceDetector.createFromOptions(
@@ -60,21 +95,29 @@ object ImageJudge {
                 FaceDetector.FaceDetectorOptions.builder()
                     .setBaseOptions(BaseOptions.builder().setModelAssetPath(FACES).build())
                     .setRunningMode(RunningMode.IMAGE)
-                    .setMinDetectionConfidence(0.45f)
+                    .setMinDetectionConfidence(0.5f)
                     .build()
             )
         } catch (e: Throwable) {
-            errors += "מודל זיהוי הפנים לא נטען: ${e.message}"
+            errors += "מודל הפנים לא נטען: ${e.message}"
             Log.e(TAG, "faces", e)
         }
-        try {
-            gender = GenderModel(ctx, GENDER)
-        } catch (e: Throwable) {
-            errors += "מודל המגדר לא נטען: ${e.message}"
-            Log.e(TAG, "gender", e)
-        }
         error = errors.takeIf { it.isNotEmpty() }?.joinToString("\n")
-        return nude != null || faces != null
+        return light != null || faces != null
+    }
+
+    /** המודל הגדול נטען רק בפעם הראשונה שצריך אותו */
+    @Synchronized
+    private fun heavyModel(ctx: Context): NudeModel? {
+        if (heavyLoaded) return heavy
+        heavyLoaded = true
+        try {
+            heavy = NudeModel(ctx, NUDE_HEAVY, 640)
+        } catch (e: Throwable) {
+            error = (error?.let { "$it\n" } ?: "") + "NudeNet 640m לא נטען: ${e.message}"
+            Log.e(TAG, "heavy", e)
+        }
+        return heavy
     }
 
     /**
@@ -94,45 +137,55 @@ object ImageJudge {
         val bmp = if (bitmap.config == Bitmap.Config.ARGB_8888) bitmap
         else bitmap.copy(Bitmap.Config.ARGB_8888, false)
         val reasons = HashSet<String>()
+        val s = cfg.sensitivity
 
         try {
-            // NudeNet רץ פעם אחת, והתוצאה משמשת גם לאנשים וגם לנשים
-            val nudeThr = nudeThreshold(cfg.sensitivity)
-            val found: List<NudeDetection> = nude?.let { model ->
+            // שלב 1: המודל הקטן
+            val quick: List<NudeDetection> = light?.let { m ->
                 try {
-                    model.detect(bmp, minOf(0.2f, nudeThr))
+                    m.detect(bmp, 0.1f)
                 } catch (e: Throwable) {
-                    Log.w(TAG, "nudenet: ${e.message}")
+                    Log.w(TAG, "320n: ${e.message}")
                     null
                 }
             } ?: emptyList()
-            if (found.isNotEmpty()) {
-                note("NudeNet: " + found.sortedByDescending { it.score }.take(5).joinToString(", ") { "${it.label} ${f2(it.score)}" })
+            if (quick.isNotEmpty()) {
+                note("320n: " + quick.sortedByDescending { it.score }.take(4).joinToString(", ") { "${it.label} ${f2(it.score)}" })
             }
 
-            // 1) אנשים — פנים לפי NudeNet, או פנים לפי מודל הפנים
+            // אנשים — כל תמונה עם פנים (לפי NudeNet או לפי מודל הפנים)
             if (wantPeople) {
-                val nudeFace = found.any { (it.label == "FACE_FEMALE" || it.label == "FACE_MALE") && it.score >= nudeThr }
-                if (nudeFace) {
+                val face = quick.any { (it.label == "FACE_FEMALE" || it.label == "FACE_MALE") && it.score >= gate(s) }
+                if (face || findFaces(bmp, Rect(0, 0, bmp.width, bmp.height)).isNotEmpty()) {
                     reasons += "PEOPLE"
-                } else {
-                    val n = findFaces(bmp, Rect(0, 0, bmp.width, bmp.height)).size
-                    if (n > 0) {
-                        note("פנים בתמונה: $n")
-                        reasons += "PEOPLE"
-                    }
+                    return reasons
                 }
             }
 
-            // 2) נשים — קודם NudeNet, ורק אם לא הכריע — פנים + מודל מגדר + אחוז עור
-            if (women != WomenLevel.OFF && reasons.isEmpty()) {
-                val womanFallback = { checkWomen(bmp, emptyList(), cfg.copy(women = WomenLevel.ALL), 0f, 0f, 0f) }
-                if (nudeVerdict(found, cfg, womanFallback)) {
-                    reasons += "WOMEN_NUDENET"
-                } else if (checkWomen(bmp, emptyList(), cfg, 0f, 0f, 0f)) {
-                    reasons += "WOMEN"
+            if (women == WomenLevel.OFF) return reasons
+
+            // השער: מה הסבירות שיש כאן אישה (או תוכן מפורש)
+            val chance = quick.filter { it.label in FEMALE_SIGNALS }.maxOfOrNull { it.score } ?: 0f
+            note("סבירות לאישה: ${f2(chance)}")
+            if (chance < gate(s)) return reasons
+
+            // שלב 2: המודל הגדול מחליט
+            val sure: List<NudeDetection> = heavyModel(ctx)?.let { m ->
+                try {
+                    m.detect(bmp, 0.2f)
+                } catch (e: Throwable) {
+                    Log.w(TAG, "640m: ${e.message}")
+                    null
                 }
+            } ?: run {
+                note("640m לא זמין — מחליט לפי 320n")
+                quick
             }
+            if (sure !== quick && sure.isNotEmpty()) {
+                note("640m: " + sure.sortedByDescending { it.score }.take(4).joinToString(", ") { "${it.label} ${f2(it.score)}" })
+            }
+
+            if (womanVerdict(bmp, sure, cfg)) reasons += "WOMEN_NUDENET"
         } finally {
             if (bmp !== bitmap) bmp.recycle()
             note("זמן: ${System.currentTimeMillis() - started}ms")
@@ -141,156 +194,38 @@ object ImageJudge {
         return reasons
     }
 
-    // =====================================================================
-    //  נשים
-    // =====================================================================
-
-    /** כמה בטוח מודל המגדר צריך להיות, לפי הרגישות */
-    private fun genderThreshold(s: Sensitivity) = when (s) {
-        Sensitivity.LOW -> 0.85f
-        Sensitivity.MEDIUM -> 0.75f
-        Sensitivity.HIGH -> 0.65f
-    }
-
-    /** איזה חלק מהגוף (בלי הפנים) צריך להיות חשוף כדי לטשטש */
-    private fun exposureThreshold(level: WomenLevel, s: Sensitivity): Float = when (level) {
-        WomenLevel.SWIMWEAR -> when (s) {
-            Sensitivity.LOW -> 0.42f
-            Sensitivity.MEDIUM -> 0.32f
-            Sensitivity.HIGH -> 0.24f
-        }
-        WomenLevel.PARTIAL -> when (s) {
-            Sensitivity.LOW -> 0.18f
-            Sensitivity.MEDIUM -> 0.12f
-            Sensitivity.HIGH -> 0.08f
-        }
-        else -> 0f
-    }
-
-    // ----- NudeNet -----
-
-    private val NUDE_EXPLICIT = setOf(
-        "FEMALE_BREAST_EXPOSED", "FEMALE_GENITALIA_EXPOSED", "BUTTOCKS_EXPOSED",
-        "ANUS_EXPOSED", "MALE_GENITALIA_EXPOSED"
-    )
-
-    /** תוויות שמעידות בעצמן על אישה בלבוש של בגד ים / תחתון */
-    private val NUDE_FEMALE_SWIMWEAR = setOf("FEMALE_BREAST_COVERED", "FEMALE_GENITALIA_COVERED", "BUTTOCKS_COVERED")
-
-    private fun nudeThreshold(s: Sensitivity) = when (s) {
-        Sensitivity.LOW -> 0.5f
-        Sensitivity.MEDIUM -> 0.35f
-        Sensitivity.HIGH -> 0.25f
-    }
-
-    /**
-     * ההחלטה לפי NudeNet. [womanSeenFallback] נקרא רק כשצריך לדעת אם יש אישה בתמונה
-     * ו-NudeNet לא ראה פנים של אישה (למשל בטן חשופה בלי פנים).
-     */
-    private fun nudeVerdict(found: List<NudeDetection>, cfg: ImageFilterConfig, womanSeenFallback: () -> Boolean): Boolean {
-        val thr = nudeThreshold(cfg.sensitivity)
-        fun has(label: String) = found.any { it.label == label && it.score >= thr }
-        fun hasAny(labels: Set<String>) = labels.any { has(it) }
+    /** ההחלטה הסופית לפי המודל הגדול */
+    private fun womanVerdict(bmp: Bitmap, found: List<NudeDetection>, cfg: ImageFilterConfig): Boolean {
+        val thr = decide(cfg.sensitivity)
+        fun best(label: String) = found.filter { it.label == label && it.score >= thr }.maxByOrNull { it.score }
+        fun hasAny(labels: Set<String>) = labels.any { best(it) != null }
 
         // תוכן מפורש — נחסם בכל רמה
-        if (hasAny(NUDE_EXPLICIT)) return true
+        if (hasAny(EXPLICIT)) return true
 
-        val femaleFace = has("FACE_FEMALE")
-        val femaleSwimwear = hasAny(NUDE_FEMALE_SWIMWEAR)
-        val belly = has("BELLY_EXPOSED")
-        val armpits = has("ARMPITS_EXPOSED")
-
-        // האם יש כאן אישה — לפי NudeNet, ואם לא בטוח לפי שאר המודלים
-        val womanSeen by lazy { femaleFace || femaleSwimwear || womanSeenFallback() }
+        val femaleFace = best("FACE_FEMALE")
+        val swimwear = hasAny(FEMALE_SWIMWEAR)
+        val womanSeen = femaleFace != null || swimwear
+        if (!womanSeen) return false
 
         return when (cfg.women) {
-            WomenLevel.ALL -> femaleFace || femaleSwimwear
-            WomenLevel.SWIMWEAR -> femaleSwimwear || (belly && womanSeen)
-            WomenLevel.PARTIAL -> femaleSwimwear || ((belly || armpits) && womanSeen)
-            WomenLevel.OFF -> false
-        }
-    }
-
-    private fun checkWomen(
-        bmp: Bitmap,
-        personBoxes: List<RectF>,
-        cfg: ImageFilterConfig,
-        femaleHints: Float,
-        swimwearLabels: Float,
-        revealingLabels: Float
-    ): Boolean {
-        val level = cfg.women
-        val s = cfg.sensitivity
-        val genderThr = genderThreshold(s)
-        val labelThr = s.threshold
-
-        // כל האנשים שזוהו, ועוד פנים שנמצאו ישירות בתמונה ולא שייכות לאף אדם שזוהה
-        // (תקריב, אדם חתוך, או אדם שמודל הזיהוי פספס)
-        val people = ArrayList<Pair<Rect, Rect?>>() // (אדם, פנים שכבר נמצאו)
-        personBoxes.forEach { people += clampRect(it, bmp) to null }
-        for (face in findFaces(bmp, Rect(0, 0, bmp.width, bmp.height))) {
-            val inside = people.any { (p, _) -> p.contains(face.centerX(), face.centerY()) }
-            if (!inside) {
-                // מגדילים את הפנים לגוף משוער: פי 3 ברוחב, פי 7 לגובה כלפי מטה
+            WomenLevel.ALL -> true
+            WomenLevel.SWIMWEAR -> swimwear || best("BELLY_EXPOSED") != null
+            WomenLevel.PARTIAL -> {
+                if (swimwear || best("BELLY_EXPOSED") != null || best("ARMPITS_EXPOSED") != null) return true
+                // זרועות/רגליים חשופות — NudeNet לא מזהה, אז בודקים כמה עור יש בגוף שמתחת לפנים
+                val face = femaleFace?.box ?: return false
                 val w = face.width()
                 val body = clampRect(
-                    RectF(
-                        (face.centerX() - w * 1.5f), face.top.toFloat(),
-                        (face.centerX() + w * 1.5f), (face.top + face.height() * 7f)
-                    ),
+                    RectF(face.centerX() - w * 1.6f, face.top, face.centerX() + w * 1.6f, face.top + face.height() * 7f),
                     bmp
                 )
-                people += body to face
+                val skin = skinRatio(bmp, body, clampRect(face, bmp))
+                note("עור חשוף: ${f2(skin)}")
+                skin >= partialSkin(cfg.sensitivity)
             }
+            WomenLevel.OFF -> false
         }
-
-        // אין אדם ואין פנים — אבל יש בגדים נשיים בתמונה (למשל צילום מהגב, או מוצר על דוגמנית)
-        if (people.isEmpty()) {
-            if (femaleHints < labelThr) return false
-            return when (level) {
-                WomenLevel.ALL -> true
-                WomenLevel.SWIMWEAR -> swimwearLabels >= labelThr
-                WomenLevel.PARTIAL -> revealingLabels >= labelThr
-                WomenLevel.OFF -> false
-            }
-        }
-
-        for ((personRect, knownFace) in people) {
-            if (personRect.width() < 20 || personRect.height() < 20) continue
-
-            val face = knownFace ?: run {
-                // מחפשים פנים בחלק העליון של האדם (שם הראש), כדי שהפנים יהיו גדולות מספיק למודל
-                val headH = min(personRect.height(), (personRect.width() * 1.3f).roundToInt())
-                findFaces(bmp, Rect(personRect.left, personRect.top, personRect.right, personRect.top + headH)).firstOrNull()
-            }
-
-            val femaleProb: Float? = face?.let { f -> genderOf(bmp, f) }
-            note(if (femaleProb != null) "מגדר: אישה ${f2(femaleProb)}" else "מגדר: לא נמצאו פנים")
-            val isWoman = when {
-                femaleProb != null -> femaleProb >= genderThr
-                // לא רואים פנים — לא מנחשים (זה גרם לחסימות מיותרות)
-                else -> false
-            }
-            if (!isWoman) continue
-
-            when (level) {
-                WomenLevel.ALL -> return true
-                WomenLevel.SWIMWEAR -> {
-                    if (swimwearLabels >= labelThr * 0.7f) return true
-                    val skin = skinRatio(bmp, personRect, face)
-                    note("עור חשוף: ${f2(skin)}")
-                    if (skin >= exposureThreshold(level, s)) return true
-                }
-                WomenLevel.PARTIAL -> {
-                    if (revealingLabels >= labelThr * 0.7f) return true
-                    val skin = skinRatio(bmp, personRect, face)
-                    note("עור חשוף: ${f2(skin)}")
-                    if (skin >= exposureThreshold(level, s)) return true
-                }
-                WomenLevel.OFF -> return false
-            }
-        }
-        return false
     }
 
     /** מחפש פנים בתוך האזור, מהגדולות לקטנות. מחזיר מלבנים בקואורדינטות של כל התמונה */
@@ -319,20 +254,6 @@ object ImageJudge {
         } catch (e: Throwable) {
             Log.w(TAG, "face: ${e.message}")
             return emptyList()
-        } finally {
-            if (crop !== bmp) crop.recycle()
-        }
-    }
-
-    private fun genderOf(bmp: Bitmap, face: Rect): Float? {
-        val gm = gender ?: return null
-        if (face.width() < 12 || face.height() < 12) return null
-        val crop = Bitmap.createBitmap(bmp, face.left, face.top, face.width(), face.height())
-        return try {
-            gm.femaleProbability(crop)
-        } catch (e: Throwable) {
-            Log.w(TAG, "gender: ${e.message}")
-            null
         } finally {
             if (crop !== bmp) crop.recycle()
         }

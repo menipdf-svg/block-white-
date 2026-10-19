@@ -18,16 +18,16 @@ data class NudeDetection(val label: String, val score: Float, val box: RectF)
 /**
  * NudeNet (notAI-tech, רישיון AGPL-3.0) — מודל YOLOv8 שאומן לסינון תוכן.
  * מזהה פנים של אישה/גבר ואזורי גוף חשופים או מכוסים.
- * קלט: 320×320 RGB בערכים 0..1, NCHW, התמונה מרופדת לריבוע (ימינה ולמטה).
- * פלט: [1, 4+18, 2100] — מרכז, רוחב, גובה, ואז ציון לכל תווית.
+ * שתי גרסאות: 320n (קטן ומהיר) ו-640m (גדול ומדויק).
+ * קלט: size×size RGB בערכים 0..1, NCHW, התמונה מרופדת לריבוע (ימינה ולמטה).
+ * פלט: [1, 4+18, N] — מרכז, רוחב, גובה, ואז ציון לכל תווית.
  */
-class NudeModel(ctx: Context, assetPath: String) {
+class NudeModel(ctx: Context, assetPath: String, private val size: Int) {
     private val env = OrtEnvironment.getEnvironment()
     private val session: OrtSession
     private val inputName: String
 
     companion object {
-        const val SIZE = 320
 
         val LABELS = listOf(
             "FEMALE_GENITALIA_COVERED",
@@ -52,11 +52,23 @@ class NudeModel(ctx: Context, assetPath: String) {
     }
 
     init {
-        val bytes = ctx.assets.open(assetPath).use { it.readBytes() }
-        val opts = OrtSession.SessionOptions().apply {
-            setIntraOpNumThreads(2)
+        // מעתיקים את המודל לקובץ פעם אחת, וטוענים ממנו — בלי להחזיק עותק שלם שלו בזיכרון
+        val file = java.io.File(ctx.filesDir, "models/" + assetPath.substringAfterLast('/'))
+        val assetLength = try {
+            ctx.assets.openFd(assetPath).use { it.length }
+        } catch (_: Exception) {
+            -1L
         }
-        session = env.createSession(bytes, opts)
+        if (!file.exists() || (assetLength > 0 && file.length() != assetLength)) {
+            file.parentFile?.mkdirs()
+            val tmp = java.io.File(file.path + ".part")
+            ctx.assets.open(assetPath).use { input -> tmp.outputStream().use { input.copyTo(it) } }
+            tmp.renameTo(file)
+        }
+        val opts = OrtSession.SessionOptions().apply {
+            setIntraOpNumThreads(if (size > 320) 4 else 2)
+        }
+        session = env.createSession(file.absolutePath, opts)
         inputName = session.inputNames.first()
     }
 
@@ -64,18 +76,18 @@ class NudeModel(ctx: Context, assetPath: String) {
     fun detect(src: Bitmap, minScore: Float): List<NudeDetection> {
         // ריפוד לריבוע (שחור, ימינה ולמטה) והקטנה ל-320
         val side = max(src.width, src.height)
-        val scale = SIZE.toFloat() / side
-        val square = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+        val scale = size.toFloat() / side
+        val square = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         square.eraseColor(Color.BLACK)
         val c = Canvas(square)
         c.scale(scale, scale)
         c.drawBitmap(src, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
 
-        val px = IntArray(SIZE * SIZE)
-        square.getPixels(px, 0, SIZE, 0, 0, SIZE, SIZE)
+        val px = IntArray(size * size)
+        square.getPixels(px, 0, size, 0, 0, size, size)
         square.recycle()
 
-        val plane = SIZE * SIZE
+        val plane = size * size
         val data = FloatArray(3 * plane)
         for (i in 0 until plane) {
             val p = px[i]
@@ -85,7 +97,7 @@ class NudeModel(ctx: Context, assetPath: String) {
         }
 
         val raw = ArrayList<NudeDetection>()
-        OnnxTensor.createTensor(env, FloatBuffer.wrap(data), longArrayOf(1, 3, SIZE.toLong(), SIZE.toLong())).use { input ->
+        OnnxTensor.createTensor(env, FloatBuffer.wrap(data), longArrayOf(1, 3, size.toLong(), size.toLong())).use { input ->
             session.run(mapOf(inputName to input)).use { result ->
                 @Suppress("UNCHECKED_CAST")
                 val out = (result[0].value as Array<Array<FloatArray>>)[0] // [22][2100]
