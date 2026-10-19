@@ -16,6 +16,7 @@ import android.view.ViewGroup
 import android.webkit.ServiceWorkerClient
 import android.webkit.ServiceWorkerController
 import android.webkit.ValueCallback
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -73,6 +74,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import com.meni.whitelistfilter.browser.BrowserStore
 import com.meni.whitelistfilter.browser.DownloadStatus
 import com.meni.whitelistfilter.browser.Downloads
@@ -96,6 +99,66 @@ class BrowserTab(val id: Long, val web: WebView, val parentId: Long?) {
 }
 
 private enum class Screen { BROWSER, TABS, BOOKMARKS, HISTORY, DOWNLOADS }
+
+/** הסקריפט בדף שואל דרך זה אם סינון התמונות פעיל */
+class FilterBridge {
+    @JavascriptInterface
+    fun active(): Boolean = ImageFilterSettings.config.value.active
+}
+
+/**
+ * מחליף תמונות data:/blob: (מעל 40 פיקסלים) במשטח אפור, גם כאלה שנוספות לדף אחר כך.
+ * רץ פעם אחת לכל דף.
+ */
+private val INLINE_IMAGE_SCRIPT = """
+(function(){
+  try { if (window.__wlf || !window.WLF || !WLF.active()) return; } catch(e) { return; }
+  window.__wlf = 1;
+  var G = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="#c8c8c8"/></svg>');
+  function bad(s) {
+    if (!s || s === G) return false;
+    return (s.indexOf('data:image') === 0 && s.indexOf('data:image/svg') !== 0) || s.indexOf('blob:') === 0;
+  }
+  function chk(img) {
+    try {
+      var s = img.currentSrc || img.src || '';
+      var ss = img.getAttribute('srcset') || '';
+      if (!bad(s) && !(ss && (ss.indexOf('data:image') === 0 || ss.indexOf('blob:') === 0))) return;
+      var w = img.naturalWidth || img.width || 0, h = img.naturalHeight || img.height || 0;
+      if (img.complete && w > 0 && h > 0 && (w < 40 || h < 40)) return;
+      if (!img.style.width && w) img.style.width = (img.width || w) + 'px';
+      if (!img.style.height && h) img.style.height = (img.height || h) + 'px';
+      img.removeAttribute('srcset');
+      img.src = G;
+    } catch (e) {}
+  }
+  function bg(el) {
+    try {
+      var b = el.style && el.style.backgroundImage;
+      if (b && (b.indexOf('data:image') >= 0 && b.indexOf('svg') < 0 || b.indexOf('blob:') >= 0)) {
+        el.style.backgroundImage = 'none';
+        el.style.backgroundColor = '#c8c8c8';
+      }
+    } catch (e) {}
+  }
+  function scan(root) {
+    if (!root || root.nodeType !== 1 && root.nodeType !== 9) return;
+    if (root.tagName === 'IMG') chk(root); else bg(root);
+    var imgs = root.querySelectorAll ? root.querySelectorAll('img') : [];
+    for (var i = 0; i < imgs.length; i++) chk(imgs[i]);
+    var styled = root.querySelectorAll ? root.querySelectorAll('[style*="background"]') : [];
+    for (var j = 0; j < styled.length; j++) bg(styled[j]);
+  }
+  scan(document);
+  new MutationObserver(function(ms) {
+    for (var i = 0; i < ms.length; i++) {
+      var m = ms[i];
+      if (m.type === 'attributes') { if (m.target.tagName === 'IMG') chk(m.target); else bg(m.target); }
+      else for (var k = 0; k < m.addedNodes.length; k++) scan(m.addedNodes[k]);
+    }
+  }).observe(document.documentElement || document, {childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset', 'style']});
+})();
+""".trimIndent()
 
 /**
  * דפדפן מסונן: כל דומיין נבדק מול הרשימה הלבנה, וכל תמונה עוברת דרך המודל המקומי.
@@ -188,7 +251,22 @@ class BrowserActivity : ComponentActivity() {
             displayZoomControls = false
         }
 
+        // תמונות שמוטמעות בקוד הדף (data: / blob:) לא עוברות דרך הבדיקה —
+        // סקריפט בתחילת כל דף מחליף אותן במשטח אפור כשסינון התמונות פעיל
+        web.addJavascriptInterface(FilterBridge(), "WLF")
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            try {
+                WebViewCompat.addDocumentStartJavaScript(web, INLINE_IMAGE_SCRIPT, setOf("*"))
+            } catch (_: Exception) {
+            }
+        }
+
         web.webViewClient = object : WebViewClient() {
+            override fun onPageCommitVisible(view: WebView, url: String) {
+                // גיבוי למכשירים בלי סקריפט בתחילת הדף
+                view.evaluateJavascript(INLINE_IMAGE_SCRIPT, null)
+            }
+
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
                 filter.handle(request)
 
@@ -210,6 +288,7 @@ class BrowserActivity : ComponentActivity() {
             }
 
             override fun onPageFinished(view: WebView, url: String) {
+                view.evaluateJavascript(INLINE_IMAGE_SCRIPT, null)
                 val t = tab()
                 t.canGoBack = view.canGoBack()
                 t.canGoForward = view.canGoForward()

@@ -17,7 +17,7 @@ import kotlin.math.roundToInt
 
 /**
  * המודלים המקומיים. כולם רצים על המכשיר, בלי אינטרנט:
- *  - EfficientDet-Lite0 — מוצא אובייקטים בתמונה (אדם, רכב, בעלי חיים...)
+ *  - EfficientDet-Lite2 — מוצא אובייקטים בתמונה (אדם, רכב, בעלי חיים...)
  *  - EfficientNet-Lite0 — מסווג את כל התמונה (נוף, בגד ים, שמלה, סוג רכב...)
  *  - BlazeFace — מוצא פנים
  *  - מודל מגדר — מקבל פנים ומחזיר אם זו אישה
@@ -25,7 +25,7 @@ import kotlin.math.roundToInt
  */
 object ImageJudge {
     private const val TAG = "ImageJudge"
-    private const val DETECTOR = "models/efficientdet_lite0.tflite"
+    private const val DETECTOR = "models/efficientdet_lite2.tflite"
     private const val CLASSIFIER = "models/efficientnet_lite0.tflite"
     private const val FACES = "models/blaze_face_short_range.tflite"
     private const val GENDER = "models/gender.tflite"
@@ -99,8 +99,8 @@ object ImageJudge {
                 ObjectDetector.ObjectDetectorOptions.builder()
                     .setBaseOptions(BaseOptions.builder().setModelAssetPath(DETECTOR).build())
                     .setRunningMode(RunningMode.IMAGE)
-                    .setMaxResults(15)
-                    .setScoreThreshold(0.2f)
+                    .setMaxResults(25)
+                    .setScoreThreshold(0.15f)
                     .build()
             )
         } catch (e: Throwable) {
@@ -191,11 +191,11 @@ object ImageJudge {
                 for (d in det.detect(image).detections()) {
                     val box = d.boundingBox()
                     // אובייקט זעיר בפינה של התמונה לא נחשב
-                    if (box.width() * box.height() < imageArea * 0.01f) continue
+                    if (box.width() * box.height() < imageArea * 0.005f) continue
                     for (c in d.categories()) {
                         when (c.categoryName().lowercase()) {
                             in DET_PEOPLE -> {
-                                if (c.score() >= 0.3f) persons += box
+                                if (c.score() >= min(0.3f, threshold)) persons += box
                                 if (c.score() >= threshold && ImageCategory.PEOPLE in wanted) reasons += "PEOPLE"
                             }
                             in DET_VEHICLES -> if (c.score() >= threshold && ImageCategory.VEHICLES in wanted) reasons += "VEHICLES"
@@ -203,6 +203,13 @@ object ImageJudge {
                         }
                     }
                 }
+            }
+
+            // 2ב) אנשים — גם פנים שנמצאו ישירות (תקריב שמודל הזיהוי לא סימן כאדם)
+            if (ImageCategory.PEOPLE in wanted && "PEOPLE" !in reasons &&
+                findFaces(bmp, Rect(0, 0, bmp.width, bmp.height)).isNotEmpty()
+            ) {
+                reasons += "PEOPLE"
             }
 
             // 3) נשים — רק אם עוד לא הוחלט לטשטש
@@ -223,9 +230,9 @@ object ImageJudge {
 
     /** כמה בטוח מודל המגדר צריך להיות, לפי הרגישות */
     private fun genderThreshold(s: Sensitivity) = when (s) {
-        Sensitivity.LOW -> 0.7f
-        Sensitivity.MEDIUM -> 0.55f
-        Sensitivity.HIGH -> 0.4f
+        Sensitivity.LOW -> 0.6f
+        Sensitivity.MEDIUM -> 0.45f
+        Sensitivity.HIGH -> 0.3f
     }
 
     /** איזה חלק מהגוף (בלי הפנים) צריך להיות חשוף כדי לטשטש */
@@ -256,38 +263,64 @@ object ImageJudge {
         val genderThr = genderThreshold(s)
         val labelThr = s.threshold
 
-        // תמונה בלי אדם שזוהה — אולי תקריב של פנים
-        val boxes = personBoxes.ifEmpty { listOf(RectF(0f, 0f, bmp.width.toFloat(), bmp.height.toFloat())) }
-        val noPersonFound = personBoxes.isEmpty()
+        // כל האנשים שזוהו, ועוד פנים שנמצאו ישירות בתמונה ולא שייכות לאף אדם שזוהה
+        // (תקריב, אדם חתוך, או אדם שמודל הזיהוי פספס)
+        val people = ArrayList<Pair<Rect, Rect?>>() // (אדם, פנים שכבר נמצאו)
+        personBoxes.forEach { people += clampRect(it, bmp) to null }
+        for (face in findFaces(bmp, Rect(0, 0, bmp.width, bmp.height))) {
+            val inside = people.any { (p, _) -> p.contains(face.centerX(), face.centerY()) }
+            if (!inside) {
+                // מגדילים את הפנים לגוף משוער: פי 3 ברוחב, פי 7 לגובה כלפי מטה
+                val w = face.width()
+                val body = clampRect(
+                    RectF(
+                        (face.centerX() - w * 1.5f), face.top.toFloat(),
+                        (face.centerX() + w * 1.5f), (face.top + face.height() * 7f)
+                    ),
+                    bmp
+                )
+                people += body to face
+            }
+        }
 
-        for (box in boxes) {
-            val personRect = clampRect(box, bmp)
-            if (personRect.width() < 24 || personRect.height() < 24) continue
+        // אין אדם ואין פנים — אבל יש בגדים נשיים בתמונה (למשל צילום מהגב, או מוצר על דוגמנית)
+        if (people.isEmpty()) {
+            if (femaleHints < labelThr) return false
+            return when (level) {
+                WomenLevel.ALL -> true
+                WomenLevel.SWIMWEAR -> swimwearLabels >= labelThr
+                WomenLevel.PARTIAL -> revealingLabels >= labelThr
+                WomenLevel.OFF -> false
+            }
+        }
 
-            // מחפשים פנים בחלק העליון של האדם (שם הראש), כדי שהפנים יהיו גדולות מספיק למודל
-            val headH = min(personRect.height(), (personRect.width() * 1.3f).roundToInt())
-            val headRect = Rect(personRect.left, personRect.top, personRect.right, personRect.top + headH)
-            val face = findFace(bmp, headRect)
+        for ((personRect, knownFace) in people) {
+            if (personRect.width() < 20 || personRect.height() < 20) continue
 
-            // תמונה בלי אדם ובלי פנים — אין כאן אישה
-            if (noPersonFound && face == null) continue
+            val face = knownFace ?: run {
+                // מחפשים פנים בחלק העליון של האדם (שם הראש), כדי שהפנים יהיו גדולות מספיק למודל
+                val headH = min(personRect.height(), (personRect.width() * 1.3f).roundToInt())
+                findFaces(bmp, Rect(personRect.left, personRect.top, personRect.right, personRect.top + headH)).firstOrNull()
+            }
 
             val femaleProb: Float? = face?.let { f -> genderOf(bmp, f) }
             val isWoman = when {
                 femaleProb != null -> femaleProb >= genderThr
-                // לא רואים פנים (גב, צד, רחוק) — מסתמכים על בגדים שמעידים על אישה
-                else -> femaleHints >= labelThr
+                // לא רואים פנים (גב, צד, רחוק). ברגישות גבוהה — מניחים שזו אישה, ליתר ביטחון
+                s == Sensitivity.HIGH -> true
+                // אחרת — לפי בגדים שמעידים על אישה (בסף נמוך יותר)
+                else -> femaleHints >= labelThr * 0.6f
             }
             if (!isWoman) continue
 
             when (level) {
                 WomenLevel.ALL -> return true
                 WomenLevel.SWIMWEAR -> {
-                    if (swimwearLabels >= labelThr) return true
+                    if (swimwearLabels >= labelThr * 0.7f) return true
                     if (skinRatio(bmp, personRect, face) >= exposureThreshold(level, s)) return true
                 }
                 WomenLevel.PARTIAL -> {
-                    if (revealingLabels >= labelThr) return true
+                    if (revealingLabels >= labelThr * 0.7f) return true
                     if (skinRatio(bmp, personRect, face) >= exposureThreshold(level, s)) return true
                 }
                 WomenLevel.OFF -> return false
@@ -296,25 +329,32 @@ object ImageJudge {
         return false
     }
 
-    /** מחפש את הפנים הגדולות ביותר בתוך האזור. מחזיר מלבן בקואורדינטות של כל התמונה */
-    private fun findFace(bmp: Bitmap, area: Rect): Rect? {
-        val fd = faces ?: return null
+    /** מחפש פנים בתוך האזור, מהגדולות לקטנות. מחזיר מלבנים בקואורדינטות של כל התמונה */
+    private fun findFaces(bmp: Bitmap, area: Rect): List<Rect> {
+        val fd = faces ?: return emptyList()
+        if (area.width() < 16 || area.height() < 16) return emptyList()
         val crop = Bitmap.createBitmap(bmp, area.left, area.top, area.width(), area.height())
         try {
             val result = fd.detect(BitmapImageBuilder(crop).build())
-            val best = result.detections().maxByOrNull { it.boundingBox().width() * it.boundingBox().height() }
-                ?: return null
-            val b = best.boundingBox()
-            // מרווח סביב הפנים — מודל המגדר אומן על פנים עם קצת שיער ורקע
-            val mx = b.width() * 0.25f
-            val my = b.height() * 0.25f
-            return clampRect(
-                RectF(area.left + b.left - mx, area.top + b.top - my * 1.4f, area.left + b.right + mx, area.top + b.bottom + my * 0.6f),
-                bmp
-            )
+            return result.detections()
+                .sortedByDescending { it.boundingBox().width() * it.boundingBox().height() }
+                .take(6)
+                .map { d ->
+                    val b = d.boundingBox()
+                    // מרווח סביב הפנים — מודל המגדר אומן על פנים עם קצת שיער ורקע
+                    val mx = b.width() * 0.25f
+                    val my = b.height() * 0.25f
+                    clampRect(
+                        RectF(
+                            area.left + b.left - mx, area.top + b.top - my * 1.4f,
+                            area.left + b.right + mx, area.top + b.bottom + my * 0.6f
+                        ),
+                        bmp
+                    )
+                }
         } catch (e: Throwable) {
             Log.w(TAG, "face: ${e.message}")
-            return null
+            return emptyList()
         } finally {
             if (crop !== bmp) crop.recycle()
         }

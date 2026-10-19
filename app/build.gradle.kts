@@ -35,8 +35,8 @@ android {
         applicationId = "com.meni.whitelistfilter"
         minSdk = 29
         targetSdk = 35
-        versionCode = 9
-        versionName = "3.6"
+        versionCode = 10
+        versionName = "3.7"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -96,8 +96,8 @@ android {
 // ----- מודלי ה-AI לסינון תמונות -----
 // יורדים אוטומטית בזמן הבנייה (ב-GitHub Actions וגם ב-Android Studio), ולא נשמרים בריפו
 val modelFiles = mapOf(
-    "efficientdet_lite0.tflite" to
-        "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/latest/efficientdet_lite0.tflite",
+    "efficientdet_lite2.tflite" to
+        "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/int8/latest/efficientdet_lite2.tflite",
     "efficientnet_lite0.tflite" to
         "https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/int8/latest/efficientnet_lite0.tflite",
     "blaze_face_short_range.tflite" to
@@ -144,4 +144,6 @@ dependencies {
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
     // הרצת מודל המגדר
     implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    // סקריפט שרץ בתחילת כל דף (לחסימת תמונות מוטמעות)
+    implementation("androidx.webkit:webkit:1.12.1")
 }
