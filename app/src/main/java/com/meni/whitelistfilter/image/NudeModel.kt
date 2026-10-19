@@ -27,6 +27,9 @@ class NudeModel(ctx: Context, assetPath: String, private val size: Int) {
     private val session: OrtSession
     private val inputName: String
 
+    /** על מה המודל רץ בפועל: NNAPI / XNNPACK / CPU — מוצג ביומן התמונות */
+    val engine: String
+
     companion object {
 
         val LABELS = listOf(
@@ -65,21 +68,51 @@ class NudeModel(ctx: Context, assetPath: String, private val size: Int) {
             ctx.assets.open(assetPath).use { input -> tmp.outputStream().use { input.copyTo(it) } }
             tmp.renameTo(file)
         }
-        // XNNPACK — מנוע ההאצה של ONNX Runtime למעבדי ARM. אם הוא לא זמין, נופלים למעבד הרגיל
         val threads = if (size > 320) 4 else 2
-        session = try {
-            env.createSession(file.absolutePath, OrtSession.SessionOptions().apply {
-                setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-                addXnnpack(mapOf("intra_op_num_threads" to threads.toString()))
-                setIntraOpNumThreads(1)
+        val path = file.absolutePath
+        val attempts = buildList<Pair<String, () -> OrtSession>> {
+            // המודל הגדול: קודם שבב ה-AI של הטלפון (NNAPI, בחצי דיוק) — הכי מהיר
+            if (size > 320) {
+                add("NNAPI" to {
+                    env.createSession(path, OrtSession.SessionOptions().apply {
+                        setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                        addNnapi(java.util.EnumSet.of(ai.onnxruntime.providers.NNAPIFlags.USE_FP16))
+                        setIntraOpNumThreads(threads)
+                    })
+                })
+            }
+            // XNNPACK — מנוע ההאצה למעבדי ARM
+            add("XNNPACK" to {
+                env.createSession(path, OrtSession.SessionOptions().apply {
+                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                    addXnnpack(mapOf("intra_op_num_threads" to threads.toString()))
+                    setIntraOpNumThreads(1)
+                })
             })
-        } catch (e: Throwable) {
-            android.util.Log.w("NudeModel", "XNNPACK unavailable: ${e.message}")
-            env.createSession(file.absolutePath, OrtSession.SessionOptions().apply {
-                setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-                setIntraOpNumThreads(threads)
+            // המעבד הרגיל
+            add("CPU" to {
+                env.createSession(path, OrtSession.SessionOptions().apply {
+                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                    setIntraOpNumThreads(threads)
+                })
             })
         }
+        var made: OrtSession? = null
+        var used = "CPU"
+        for ((name, create) in attempts) {
+            made = try {
+                create()
+            } catch (e: Throwable) {
+                android.util.Log.w("NudeModel", "$name unavailable: ${e.message}")
+                null
+            }
+            if (made != null) {
+                used = name
+                break
+            }
+        }
+        session = made ?: throw IllegalStateException("no ONNX session")
+        engine = used
         inputName = session.inputNames.first()
     }
 

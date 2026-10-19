@@ -205,6 +205,7 @@ object ImageJudge {
                 note("640m לא זמין — מחליט לפי 320n")
                 quick
             }
+            heavy?.let { note("מנוע: ${it.engine}") }
             if (sure !== quick && sure.isNotEmpty()) {
                 note("640m: " + sure.sortedByDescending { it.score }.take(4).joinToString(", ") { "${it.label} ${f2(it.score)}" })
             }
@@ -218,8 +219,30 @@ object ImageJudge {
         return reasons
     }
 
+    /**
+     * לפעמים המודל מסמן את אותם פנים גם כגבר וגם כאישה (שתי תיבות כמעט חופפות).
+     * לכל פנים משאירים רק את התווית עם הציון הגבוה יותר.
+     */
+    private fun resolveFaces(found: List<NudeDetection>): List<NudeDetection> {
+        val faces = found.filter { it.label == "FACE_FEMALE" || it.label == "FACE_MALE" }.sortedByDescending { it.score }
+        val kept = ArrayList<NudeDetection>()
+        for (f in faces) {
+            if (kept.none { overlap(it.box, f.box) > 0.4f }) kept += f
+        }
+        return found.filter { it.label != "FACE_FEMALE" && it.label != "FACE_MALE" } + kept
+    }
+
+    private fun overlap(a: RectF, b: RectF): Float {
+        val ix = max(0f, min(a.right, b.right) - max(a.left, b.left))
+        val iy = max(0f, min(a.bottom, b.bottom) - max(a.top, b.top))
+        val inter = ix * iy
+        val smaller = min(a.width() * a.height(), b.width() * b.height())
+        return if (smaller <= 0f) 0f else inter / smaller
+    }
+
     /** ההחלטה הסופית לפי המודל הגדול */
-    private fun womanVerdict(bmp: Bitmap, found: List<NudeDetection>, cfg: ImageFilterConfig): Boolean {
+    private fun womanVerdict(bmp: Bitmap, raw: List<NudeDetection>, cfg: ImageFilterConfig): Boolean {
+        val found = resolveFaces(raw)
         val thr = decide(cfg.sensitivity)
         fun best(label: String) = found.filter { it.label == label && it.score >= thr }.maxByOrNull { it.score }
         fun hasAny(labels: Set<String>) = labels.any { best(it) != null }
@@ -230,6 +253,9 @@ object ImageJudge {
         val femaleFace = best("FACE_FEMALE")
         val swimwear = hasAny(FEMALE_SWIMWEAR)
         val womanSeen = femaleFace != null || swimwear
+        note("פנים: " + found.filter { it.label.startsWith("FACE_") }
+            .joinToString(", ") { (if (it.label == "FACE_FEMALE") "אישה " else "גבר ") + f2(it.score) }
+            .ifEmpty { "אין" })
         if (!womanSeen) return false
 
         return when (cfg.women) {
