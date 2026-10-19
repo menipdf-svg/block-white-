@@ -83,13 +83,6 @@ object FilterState {
 
     val imageLog = MutableStateFlow<List<ImageLogEntry>>(emptyList())
 
-    /** כמה בקשות לרשתות פרסום נחסמו */
-    val adsBlocked = MutableStateFlow(0)
-
-    fun adBlocked() {
-        adsBlocked.update { it + 1 }
-    }
-
     fun imageChecked(blurred: Boolean) {
         imagesChecked.update { it + 1 }
         if (blurred) imagesBlurred.update { it + 1 }

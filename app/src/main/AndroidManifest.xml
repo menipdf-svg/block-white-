@@ -24,43 +24,6 @@
             </intent-filter>
         </activity>
 
-        <!-- דפדפן מסונן: מופיע כאפליקציה נפרדת, ויכול להיות דפדפן ברירת המחדל -->
-        <activity
-            android:name=".BrowserActivity"
-            android:exported="true"
-            android:label="דפדפן מסונן"
-            android:launchMode="singleTask"
-            android:taskAffinity=".browser"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
-            android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="http" />
-                <data android:scheme="https" />
-            </intent-filter>
-        </activity>
-
-        <!-- דפדפן ניסיוני על מנוע Firefox, עם תוסף סינון מובנה -->
-        <activity
-            android:name=".firefox.FirefoxActivity"
-            android:exported="true"
-            android:label="דפדפן Firefox מסונן"
-            android:launchMode="singleTask"
-            android:taskAffinity=".firefox"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
-            android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-
         <!-- בדיקת תמונות לפיירפוקס המסונן (בודק מי מתחבר — רק org.mozilla.fenix...) -->
         <service
             android:name=".image.ImageCheckService"

@@ -13,7 +13,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.meni.whitelistfilter.BrowserActivity
 import com.meni.whitelistfilter.FilterState
 import com.meni.whitelistfilter.image.ImageCache
 import com.meni.whitelistfilter.image.ImageCategory
@@ -23,7 +22,7 @@ import com.meni.whitelistfilter.image.Sensitivity
 import com.meni.whitelistfilter.image.WomenLevel
 
 @Composable
-fun ImagesScreen(onBrowserDomains: () -> Unit) {
+fun ImagesScreen() {
     val ctx = LocalContext.current
     remember { ImageFilterSettings.init(ctx) }
     val cfg by ImageFilterSettings.config.collectAsState()
@@ -43,7 +42,7 @@ fun ImagesScreen(onBrowserDomains: () -> Unit) {
                 modifier = Modifier.padding(top = 16.dp)
             )
             Text(
-                "בדפדפן המסונן כל תמונה נבדקת במודל AI שרץ על המכשיר עצמו, ומה שבחרת מטושטש לפני שהוא מוצג. שום תמונה לא נשלחת לשרת.",
+                "בפיירפוקס המסונן כל תמונה נבדקת במודל AI שרץ על המכשיר עצמו, ומה שבחרת מוחלף במשטח אפור לפני שהוא מוצג. שום תמונה לא נשלחת לשרת.",
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -67,14 +66,14 @@ fun ImagesScreen(onBrowserDomains: () -> Unit) {
                     }
                     Spacer(Modifier.height(12.dp))
                     Button(
-                        onClick = { ctx.startActivity(Intent(ctx, BrowserActivity::class.java)) },
+                        onClick = {
+                            val launch = ctx.packageManager.getLaunchIntentForPackage("org.mozilla.fenix.debug")
+                                ?: ctx.packageManager.getLaunchIntentForPackage("org.mozilla.fenix")
+                            if (launch != null) ctx.startActivity(launch)
+                            else Toast.makeText(ctx, "פיירפוקס המסונן לא מותקן", Toast.LENGTH_SHORT).show()
+                        },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("🌐 פתח את הדפדפן המסונן") }
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = { ctx.startActivity(Intent(ctx, com.meni.whitelistfilter.firefox.FirefoxActivity::class.java)) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("🦊 דפדפן Firefox (ניסיוני)") }
+                    ) { Text("🦊 פתח את פיירפוקס המסונן") }
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(
                         onClick = {
@@ -172,40 +171,6 @@ fun ImagesScreen(onBrowserDomains: () -> Unit) {
             }
         }
 
-        item { SectionTitle("מהירות") }
-        item {
-            val ads by FilterState.adsBlocked.collectAsState()
-            Card(Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("🚫 חסימת פרסומות", style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            "חוסם רשתות פרסום ומעקב (Taboola, Outbrain, Google Ads ועוד). הדפים נטענים מהר יותר, ויש פחות תמונות לבדוק." +
-                                if (ads > 0) "\nנחסמו עד עכשיו: $ads" else "",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                    Switch(
-                        checked = cfg.blockAds,
-                        onCheckedChange = { on -> ImageFilterSettings.update { it.copy(blockAds = on) } }
-                    )
-                }
-            }
-        }
-
-        item { SectionTitle("אתרים בדפדפן") }
-        item {
-            Card(Modifier.fillMaxWidth().clickable { onBrowserDomains() }) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("🌐 דומיינים של הדפדפן", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        "הדפדפן מקבל את הרשימה הכללית, ועוד דומיינים שתאשר לו כאן. גם בקשות שנחסמו מופיעות שם עם כפתור אישור.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-        }
-
         item { SectionTitle("📋 יומן תמונות") }
         item {
             Card(Modifier.fillMaxWidth().clickable { showLog = !showLog }) {
@@ -254,7 +219,7 @@ fun ImagesScreen(onBrowserDomains: () -> Unit) {
 
         item {
             Text(
-                "חשוב: הסינון עובד רק בדפדפן הזה. כדי שלא יעקפו אותו, הגדר את כרום ושאר הדפדפנים כ\"חסום\" בלשונית האפליקציות.",
+                "חשוב: סינון התמונות עובד רק בפיירפוקס המסונן. את האתרים שמותרים בו קובעים בלשונית האפליקציות (org.mozilla.fenix.debug ← רשימה לבנה). כדי שלא יעקפו אותו, הגדר את כרום ושאר הדפדפנים כ\"חסום\".",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(vertical = 16.dp)
             )

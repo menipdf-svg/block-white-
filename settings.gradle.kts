@@ -11,8 +11,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // GeckoView — מנוע ה-Firefox
-        maven("https://maven.mozilla.org/maven2/")
     }
 }
 

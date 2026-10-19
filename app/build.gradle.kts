@@ -36,8 +36,8 @@ android {
         applicationId = "com.meni.whitelistfilter"
         minSdk = 29
         targetSdk = 35
-        versionCode = 26
-        versionName = "5.1"
+        versionCode = 27
+        versionName = "6.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a") // Galaxy S26 Ultra — arm64 בלבד
@@ -174,10 +174,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // מודל AI מקומי לזיהוי תוכן בתמונות
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
-    // סקריפט שרץ בתחילת כל דף (לחסימת תמונות מוטמעות)
-    implementation("androidx.webkit:webkit:1.12.1")
     // הרצת NudeNet (מודל ONNX)
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
-    // מנוע Firefox לדפדפן הניסיוני
-    implementation("org.mozilla.geckoview:geckoview:140.0.20250707120347")
 }

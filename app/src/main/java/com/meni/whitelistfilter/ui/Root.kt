@@ -52,7 +52,7 @@ fun Root(onStart: () -> Unit, onStop: () -> Unit) {
                 tab == 0 -> StatusScreen(onStart, onStop)
                 tab == 1 -> AppsScreen(onOpen = { openApp = it })
                 tab == 2 -> DomainsScreen()
-                tab == 3 -> ImagesScreen(onBrowserDomains = { openApp = ctx.packageName })
+                tab == 3 -> ImagesScreen()
                 else -> LogScreen()
             }
         }
