@@ -53,6 +53,15 @@ class WebFilter(context: Context, private val userAgent: String) {
 
     fun isAllowedHost(host: String): Boolean = Rules.isAllowed(uid, host)
 
+    /** בדיקת תמונה שכבר נמצאת בידינו (למשל תמונה מוטמעת בדף). true = לחסום */
+    fun isBlocked(bytes: ByteArray, label: String): Boolean {
+        val cfg = ImageFilterSettings.config.value
+        if (!cfg.active) return false
+        val blocked = judge(bytes, cfg, label) != null
+        FilterState.imageChecked(blocked)
+        return blocked
+    }
+
     fun handle(request: WebResourceRequest): WebResourceResponse? {
         val url = request.url
         val scheme = url.scheme?.lowercase()

@@ -101,36 +101,103 @@ class BrowserTab(val id: Long, val web: WebView, val parentId: Long?) {
 
 private enum class Screen { BROWSER, TABS, BOOKMARKS, HISTORY, DOWNLOADS }
 
-/** הסקריפט בדף שואל דרך זה אם סינון התמונות פעיל */
-class FilterBridge {
+/**
+ * הגשר בין הדף לאפליקציה: הסקריפט בדף שולח לכאן תמונות מוטמעות (data: / blob:),
+ * המודלים בודקים אותן ברקע, והתשובה חוזרת לדף.
+ */
+class FilterBridge(private val web: WebView, private val filter: WebFilter) {
     @JavascriptInterface
     fun active(): Boolean = ImageFilterSettings.config.value.active
+
+    @JavascriptInterface
+    fun check(id: String, dataUrl: String) {
+        val safeId = id.filter { it.isLetterOrDigit() }.take(24)
+        if (safeId.isEmpty()) return
+        checks.execute {
+            val blocked = try {
+                val bytes = decodeDataUrl(dataUrl)
+                if (bytes == null) true else filter.isBlocked(bytes, "inline:" + dataUrl.take(40))
+            } catch (_: Throwable) {
+                ImageFilterSettings.config.value.blockUnchecked
+            }
+            web.post {
+                try {
+                    web.evaluateJavascript("window.__wlfDone&&__wlfDone('" + safeId + "'," + blocked + ")", null)
+                } catch (_: Throwable) {
+                }
+            }
+        }
+    }
+
+    private fun decodeDataUrl(url: String): ByteArray? {
+        val comma = url.indexOf(',')
+        if (!url.startsWith("data:") || comma < 0) return null
+        val meta = url.substring(5, comma)
+        val body = url.substring(comma + 1)
+        return if (meta.contains(";base64")) android.util.Base64.decode(body, android.util.Base64.DEFAULT)
+        else java.net.URLDecoder.decode(body, "UTF-8").toByteArray()
+    }
+
+    companion object {
+        /** בדיקה אחת בכל פעם — המודלים ממילא עובדים אחד-אחד */
+        private val checks = java.util.concurrent.Executors.newSingleThreadExecutor()
+    }
 }
 
 /**
- * מחליף תמונות data:/blob: (מעל 40 פיקסלים) במשטח אפור, גם כאלה שנוספות לדף אחר כך.
- * רץ פעם אחת לכל דף.
+ * תמונות שמוטמעות בקוד הדף (data: / blob:) לא עוברות דרך בקשות רשת, ולכן הן נבדקות כך:
+ * מסתירים את התמונה (בלי לשנות את הפריסה), שולחים אותה למודלים, ולפי התשובה
+ * מציגים אותה או מחליפים במשטח אפור. רץ פעם אחת לכל דף.
  */
 private val INLINE_IMAGE_SCRIPT = """
 (function(){
   try { if (window.__wlf || !window.WLF || !WLF.active()) return; } catch(e) { return; }
   window.__wlf = 1;
   var G = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="#c8c8c8"/></svg>');
-  function bad(s) {
+  var seq = 0, pending = {};
+  function inline(s) {
     if (!s || s === G) return false;
     return (s.indexOf('data:image') === 0 && s.indexOf('data:image/svg') !== 0) || s.indexOf('blob:') === 0;
+  }
+  function block(img) {
+    try {
+      if (!img.style.width && img.width) img.style.width = img.width + 'px';
+      if (!img.style.height && img.height) img.style.height = img.height + 'px';
+      img.removeAttribute('srcset');
+      img.src = G;
+      img.style.visibility = '';
+    } catch (e) {}
+  }
+  window.__wlfDone = function(id, blocked) {
+    var p = pending[id];
+    if (!p) return;
+    delete pending[id];
+    var img = p.img;
+    // אם בינתיים התמונה הוחלפה במשהו אחר — הבדיקה הזו כבר לא רלוונטית
+    if ((img.currentSrc || img.src) !== p.src) { img.style.visibility = ''; chk(img); return; }
+    img.__wlfOk = !blocked ? p.src : null;
+    if (blocked) block(img); else img.style.visibility = '';
+  };
+  function send(img, src) {
+    var id = 'i' + (++seq);
+    pending[id] = { img: img, src: src };
+    img.style.visibility = 'hidden';
+    if (src.indexOf('blob:') === 0) {
+      fetch(src).then(function(r) { return r.blob(); }).then(function(b) {
+        return new Promise(function(res) { var fr = new FileReader(); fr.onload = function() { res(fr.result); }; fr.readAsDataURL(b); });
+      }).then(function(d) { WLF.check(id, d); }).catch(function() { delete pending[id]; block(img); });
+    } else {
+      WLF.check(id, src);
+    }
   }
   function chk(img) {
     try {
       var s = img.currentSrc || img.src || '';
-      var ss = img.getAttribute('srcset') || '';
-      if (!bad(s) && !(ss && (ss.indexOf('data:image') === 0 || ss.indexOf('blob:') === 0))) return;
-      var w = img.naturalWidth || img.width || 0, h = img.naturalHeight || img.height || 0;
+      if (!inline(s) || img.__wlfOk === s) return;
+      for (var k in pending) if (pending[k].img === img && pending[k].src === s) return;
+      var w = img.naturalWidth || 0, h = img.naturalHeight || 0;
       if (img.complete && w > 0 && h > 0 && (w < 40 || h < 40)) return;
-      if (!img.style.width && w) img.style.width = (img.width || w) + 'px';
-      if (!img.style.height && h) img.style.height = (img.height || h) + 'px';
-      img.removeAttribute('srcset');
-      img.src = G;
+      send(img, s);
     } catch (e) {}
   }
   function bg(el) {
@@ -154,7 +221,7 @@ private val INLINE_IMAGE_SCRIPT = """
   new MutationObserver(function(ms) {
     for (var i = 0; i < ms.length; i++) {
       var m = ms[i];
-      if (m.type === 'attributes') { if (m.target.tagName === 'IMG') chk(m.target); else bg(m.target); }
+      if (m.type === 'attributes') { if (m.target.tagName === 'IMG') { if (m.attributeName !== 'style') chk(m.target); } else bg(m.target); }
       else for (var k = 0; k < m.addedNodes.length; k++) scan(m.addedNodes[k]);
     }
   }).observe(document.documentElement || document, {childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset', 'style']});
@@ -254,7 +321,7 @@ class BrowserActivity : ComponentActivity() {
 
         // תמונות שמוטמעות בקוד הדף (data: / blob:) לא עוברות דרך הבדיקה —
         // סקריפט בתחילת כל דף מחליף אותן במשטח אפור כשסינון התמונות פעיל
-        web.addJavascriptInterface(FilterBridge(), "WLF")
+        web.addJavascriptInterface(FilterBridge(web, filter), "WLF")
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             try {
                 WebViewCompat.addDocumentStartJavaScript(web, INLINE_IMAGE_SCRIPT, setOf("*"))
