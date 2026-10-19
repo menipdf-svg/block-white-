@@ -147,9 +147,9 @@ object ImageJudge {
 
     /** כמה בטוח מודל המגדר צריך להיות, לפי הרגישות */
     private fun genderThreshold(s: Sensitivity) = when (s) {
-        Sensitivity.LOW -> 0.6f
-        Sensitivity.MEDIUM -> 0.45f
-        Sensitivity.HIGH -> 0.3f
+        Sensitivity.LOW -> 0.85f
+        Sensitivity.MEDIUM -> 0.75f
+        Sensitivity.HIGH -> 0.65f
     }
 
     /** איזה חלק מהגוף (בלי הפנים) צריך להיות חשוף כדי לטשטש */
@@ -268,10 +268,8 @@ object ImageJudge {
             note(if (femaleProb != null) "מגדר: אישה ${f2(femaleProb)}" else "מגדר: לא נמצאו פנים")
             val isWoman = when {
                 femaleProb != null -> femaleProb >= genderThr
-                // לא רואים פנים (גב, צד, רחוק). ברגישות גבוהה — מניחים שזו אישה, ליתר ביטחון
-                s == Sensitivity.HIGH -> true
-                // אחרת — לפי בגדים שמעידים על אישה (בסף נמוך יותר)
-                else -> femaleHints >= labelThr * 0.6f
+                // לא רואים פנים — לא מנחשים (זה גרם לחסימות מיותרות)
+                else -> false
             }
             if (!isWoman) continue
 

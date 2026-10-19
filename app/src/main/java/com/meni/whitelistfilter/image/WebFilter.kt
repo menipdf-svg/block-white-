@@ -69,6 +69,8 @@ class WebFilter(context: Context, private val userAgent: String) {
         val cfg = ImageFilterSettings.config.value
         if (!cfg.active) return null
         if (!request.method.equals("GET", true) || !looksLikeImage(request)) return null
+        // SVG (לוגואים ואייקונים) — הדפדפן צריך אותם עם הסוג הנכון, ולא בודקים אותם ממילא
+        if (url.lastPathSegment?.lowercase()?.endsWith(".svg") == true) return null
 
         return try {
             fetchAndFilter(request, cfg)
