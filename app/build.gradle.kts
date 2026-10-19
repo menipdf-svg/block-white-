@@ -36,8 +36,8 @@ android {
         applicationId = "com.meni.whitelistfilter"
         minSdk = 29
         targetSdk = 35
-        versionCode = 24
-        versionName = "4.5"
+        versionCode = 25
+        versionName = "5.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a") // Galaxy S26 Ultra — arm64 בלבד
@@ -178,4 +178,6 @@ dependencies {
     implementation("androidx.webkit:webkit:1.12.1")
     // הרצת NudeNet (מודל ONNX)
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
+    // מנוע Firefox לדפדפן הניסיוני
+    implementation("org.mozilla.geckoview:geckoview:158.0.20261007201254")
 }

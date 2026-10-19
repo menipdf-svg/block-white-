@@ -72,6 +72,11 @@ fun ImagesScreen(onBrowserDomains: () -> Unit) {
                     ) { Text("🌐 פתח את הדפדפן המסונן") }
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(
+                        onClick = { ctx.startActivity(Intent(ctx, com.meni.whitelistfilter.firefox.FirefoxActivity::class.java)) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("🦊 דפדפן Firefox (ניסיוני)") }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
                         onClick = {
                             ImageCache.clear(ctx)
                             Toast.makeText(ctx, "התמונות נמחקו מהמטמון", Toast.LENGTH_SHORT).show()

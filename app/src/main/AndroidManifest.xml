@@ -46,6 +46,21 @@
             </intent-filter>
         </activity>
 
+        <!-- דפדפן ניסיוני על מנוע Firefox, עם תוסף סינון מובנה -->
+        <activity
+            android:name=".firefox.FirefoxActivity"
+            android:exported="true"
+            android:label="דפדפן Firefox מסונן"
+            android:launchMode="singleTask"
+            android:taskAffinity=".firefox"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".FilterVpnService"
             android:exported="true"

@@ -69,6 +69,21 @@ class WebFilter(context: Context, private val userAgent: String) {
         return blocked
     }
 
+    /**
+     * בדיקת תמונה שהגיעה מתוסף ה-Firefox (כבר הורדה). null = להעביר את המקור,
+     * אחרת — הבתים שצריך לכתוב במקומה (משטח חסום).
+     */
+    fun checkForGecko(bytes: ByteArray, url: String): ByteArray? {
+        val cfg = ImageFilterSettings.config.value
+        if (!cfg.active) return null
+        DiskImageCache.get(ctx, cfg, url)?.let { cached -> return if (cached.contentEquals(bytes)) null else cached }
+        val blocked = judge(bytes, cfg, url)
+        FilterState.imageChecked(blocked != null)
+        val out = blocked?.second
+        DiskImageCache.put(ctx, cfg, url, out ?: bytes)
+        return out
+    }
+
     private fun sha1(b: ByteArray): String =
         java.security.MessageDigest.getInstance("SHA-1").digest(b).joinToString("") { "%02x".format(it) }
 

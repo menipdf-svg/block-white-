@@ -29,6 +29,9 @@ object AdBlock {
         "permutive.com", "permutive.app", "id5-sync.com", "liadm.com", "agkn.com", "mathtag.com"
     )
 
+    /** כל הרשימה — לתוסף של דפדפן ה-Firefox */
+    fun all(): Set<String> = DOMAINS
+
     fun isAd(host: String): Boolean {
         var h = host.lowercase().trimEnd('.')
         while (true) {
