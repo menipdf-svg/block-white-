@@ -27,6 +27,8 @@ fun ImagesScreen(onBrowserDomains: () -> Unit) {
     val cfg by ImageFilterSettings.config.collectAsState()
     val checked by FilterState.imagesChecked.collectAsState()
     val blurred by FilterState.imagesBlurred.collectAsState()
+    val imageLog by FilterState.imageLog.collectAsState()
+    var showLog by remember { mutableStateOf(false) }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -164,6 +166,52 @@ fun ImagesScreen(onBrowserDomains: () -> Unit) {
                         "הדפדפן מקבל את הרשימה הכללית, ועוד דומיינים שתאשר לו כאן. גם בקשות שנחסמו מופיעות שם עם כפתור אישור.",
                         style = MaterialTheme.typography.bodySmall
                     )
+                }
+            }
+        }
+
+        item { SectionTitle("📋 יומן תמונות") }
+        item {
+            Card(Modifier.fillMaxWidth().clickable { showLog = !showLog }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("מה המודל החליט על כל תמונה", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "${imageLog.size} תמונות אחרונות. אם משהו נחסם או עבר בטעות — צלם את המסך הזה ושלח.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Text(if (showLog) "▲" else "▼")
+                }
+            }
+        }
+        if (showLog) {
+            item {
+                TextButton(onClick = { FilterState.clearImageLog() }) { Text("נקה יומן") }
+            }
+            items(imageLog.size) { i ->
+                val e = imageLog[i]
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (e.blocked) MaterialTheme.colorScheme.errorContainer
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(Modifier.padding(10.dp)) {
+                        Text(
+                            (if (e.blocked) "⛔ נחסם: " else "✅ עבר: ") + e.reason,
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        if (e.detail.isNotBlank()) {
+                            Text(e.detail, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Text(
+                            e.url.removePrefix("https://").removePrefix("http://").take(90),
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
         }

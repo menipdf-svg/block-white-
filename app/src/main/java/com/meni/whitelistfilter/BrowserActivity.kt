@@ -538,6 +538,16 @@ class BrowserActivity : ComponentActivity() {
         val video = customView
         val tab = currentTab
 
+        // הדפדפן יכול להציג תמונות מהזיכרון בלי לבקש אותן שוב (ואז הן לא נבדקות).
+        // מנקים את הזיכרון בהפעלה ובכל שינוי בהגדרות הסינון, ומרעננים את הדף.
+        val cfg by ImageFilterSettings.config.collectAsState()
+        var firstConfig by remember { mutableStateOf(true) }
+        LaunchedEffect(cfg) {
+            tabs.firstOrNull()?.web?.clearCache(true)
+            if (firstConfig) firstConfig = false
+            else currentTab?.takeIf { it.url.isNotBlank() }?.web?.reload()
+        }
+
         BackHandler(enabled = true) {
             when {
                 video != null -> exitFullscreen()

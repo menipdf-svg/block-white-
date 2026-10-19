@@ -35,8 +35,8 @@ android {
         applicationId = "com.meni.whitelistfilter"
         minSdk = 29
         targetSdk = 35
-        versionCode = 11
-        versionName = "3.8"
+        versionCode = 12
+        versionName = "3.9"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")

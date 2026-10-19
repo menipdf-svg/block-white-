@@ -121,8 +121,15 @@ class WebFilter(context: Context, private val userAgent: String) {
             val headers = responseHeaders(conn)
             val reason = conn.responseMessage?.takeIf { it.isNotBlank() } ?: "OK"
 
+            // שרתים מסוימים שולחים תמונה בלי סוג נכון — בודקים את התוכן עצמו
+            val looksDecodable = !mime.startsWith("image/") && code in 200..299 && run {
+                val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
+                o.outWidth > 0 && o.outHeight > 0
+            }
+
             // לא תמונה, שגיאה, או SVG (גרפיקה וקטורית — אייקונים) → מעבירים כמו שזה
-            if (code !in 200..299 || !mime.startsWith("image/") || mime.contains("svg")) {
+            if (code !in 200..299 || (!mime.startsWith("image/") && !looksDecodable) || mime.contains("svg")) {
                 return WebResourceResponse(mime, charsetOf(contentType), code, reason, headers, ByteArrayInputStream(bytes))
             }
 
@@ -138,7 +145,7 @@ class WebFilter(context: Context, private val userAgent: String) {
                 return WebResourceResponse(mime, null, code, reason, headers, ByteArrayInputStream(bytes))
             }
 
-            val blurred = judge(bytes, cfg)
+            val blurred = judge(bytes, cfg, urlStr)
             verdicts.put(key, blurred != null)
             FilterState.imageChecked(blurred != null)
             return if (blurred == null) {
@@ -152,7 +159,7 @@ class WebFilter(context: Context, private val userAgent: String) {
     }
 
     /** null = התמונה בסדר. אחרת: (סוג, בתים) של התמונה המטושטשת */
-    private fun judge(bytes: ByteArray, cfg: ImageFilterConfig): Pair<String, ByteArray>? {
+    private fun judge(bytes: ByteArray, cfg: ImageFilterConfig, url: String): Pair<String, ByteArray>? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         val w = bounds.outWidth
@@ -160,6 +167,7 @@ class WebFilter(context: Context, private val userAgent: String) {
 
         if (w <= 0 || h <= 0) {
             // פורמט שלא הצלחנו לפענח
+            FilterState.logImage(url, cfg.blockUnchecked, "פורמט לא נתמך", "")
             return if (cfg.blockUnchecked) placeholder(320, 240) else null
         }
         if (w < MIN_SIDE || h < MIN_SIDE) return null
@@ -172,22 +180,38 @@ class WebFilter(context: Context, private val userAgent: String) {
                 inSampleSize = sample
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
-        ) ?: return if (cfg.blockUnchecked) placeholder(w, h) else null
+        )
+        if (bmp == null) {
+            FilterState.logImage(url, cfg.blockUnchecked, "פענוח נכשל", "${w}x$h")
+            return if (cfg.blockUnchecked) placeholder(w, h) else null
+        }
 
         try {
             val found = try {
                 ImageJudge.find(ctx, bmp, cfg)
             } catch (e: Exception) {
                 Log.w(TAG, "judge: ${e.message}")
+                FilterState.logImage(url, cfg.blockUnchecked, "שגיאה בבדיקה", e.message ?: "")
                 return if (cfg.blockUnchecked) blur(bmp, w, h) else null
             }
+            val detail = "${w}x$h · " + ImageJudge.lastDetail
+            FilterState.logImage(url, found.isNotEmpty(), found.joinToString(", ") { reasonTitle(it) }.ifEmpty { "תקין" }, detail)
             return if (found.isEmpty()) null else blur(bmp, w, h)
         } finally {
             bmp.recycle()
         }
     }
 
-    /** טשטוש חזק: מקטינים מאוד ומגדילים חזרה לגודל המקורי, כדי שהעמוד לא יזוז */
+    private fun reasonTitle(r: String) = when (r) {
+        "PEOPLE" -> "אנשים"
+        "LANDSCAPES" -> "נוף"
+        "VEHICLES" -> "רכב"
+        "ANIMALS" -> "בעלי חיים"
+        "WOMEN_NUDENET" -> "אישה (NudeNet)"
+        "WOMEN" -> "אישה"
+        else -> r
+    }
+
     /**
      * תמונה שנחסמה מוחלפת במשטח אפור אחיד עם סימן "חסום".
      * שום פיקסל מהתמונה המקורית לא נשאר — אי אפשר לנחש מה היה בה.

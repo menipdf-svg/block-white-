@@ -43,6 +43,14 @@ object ImageJudge {
     var error: String? = null
         private set
 
+    /** פירוט מה המודלים ראו בתמונה האחרונה שנבדקה — ליומן התמונות */
+    @Volatile
+    var lastDetail: String = ""
+        private set
+    private val notes = ArrayList<String>()
+    private fun note(s: String) { notes += s }
+    private fun f2(x: Float) = String.format(java.util.Locale.US, "%.2f", x)
+
     // ----- תוויות של מודל הזיהוי (COCO) -----
     private val DET_PEOPLE = setOf("person")
     private val DET_VEHICLES = setOf("car", "bus", "truck", "motorcycle", "bicycle", "train", "airplane", "boat")
@@ -163,6 +171,8 @@ object ImageJudge {
         val women = cfg.women
         if (wanted.isEmpty() && women == WomenLevel.OFF) return emptySet()
         if (!ensure(ctx)) throw IllegalStateException(error ?: "המודל לא זמין")
+        notes.clear()
+        lastDetail = ""
 
         val threshold = cfg.sensitivity.threshold
         val bmp = if (bitmap.config == Bitmap.Config.ARGB_8888) bitmap
@@ -189,6 +199,9 @@ object ImageJudge {
                     }
                     if (cat != null) sums[cat] = (sums[cat] ?: 0f) + c.score()
                 }
+                labels.entries.sortedByDescending { it.value }.take(3).takeIf { it.isNotEmpty() }?.let { top ->
+                    note("סיווג: " + top.joinToString(", ") { "${it.key} ${f2(it.value)}" })
+                }
                 sums.forEach { (cat, score) -> if (score >= threshold && cat in wanted) reasons += cat.name }
             }
             fun labelScore(set: Set<String>) = labels.filterKeys { it in set }.values.sum()
@@ -202,6 +215,7 @@ object ImageJudge {
                     // אובייקט זעיר בפינה של התמונה לא נחשב
                     if (box.width() * box.height() < imageArea * 0.005f) continue
                     for (c in d.categories()) {
+                        if (c.score() >= 0.2f) note("זוהה: ${c.categoryName()} ${f2(c.score())}")
                         when (c.categoryName().lowercase()) {
                             in DET_PEOPLE -> {
                                 if (c.score() >= min(0.3f, threshold)) persons += box
@@ -215,10 +229,12 @@ object ImageJudge {
             }
 
             // 2ב) אנשים — גם פנים שנמצאו ישירות (תקריב שמודל הזיהוי לא סימן כאדם)
-            if (ImageCategory.PEOPLE in wanted && "PEOPLE" !in reasons &&
-                findFaces(bmp, Rect(0, 0, bmp.width, bmp.height)).isNotEmpty()
-            ) {
-                reasons += "PEOPLE"
+            if (ImageCategory.PEOPLE in wanted && "PEOPLE" !in reasons) {
+                val n = findFaces(bmp, Rect(0, 0, bmp.width, bmp.height)).size
+                if (n > 0) {
+                    note("פנים בתמונה: $n")
+                    reasons += "PEOPLE"
+                }
             }
 
             // 3) נשים — רק אם עוד לא הוחלט לטשטש
@@ -237,6 +253,7 @@ object ImageJudge {
             }
         } finally {
             if (bmp !== bitmap) bmp.recycle()
+            lastDetail = notes.joinToString(" · ")
         }
         return reasons
     }
@@ -295,6 +312,9 @@ object ImageJudge {
         } catch (e: Throwable) {
             Log.w(TAG, "nudenet: ${e.message}")
             return false
+        }
+        if (found.isNotEmpty()) {
+            note("NudeNet: " + found.sortedByDescending { it.score }.take(5).joinToString(", ") { "${it.label} ${f2(it.score)}" })
         }
         fun has(label: String) = found.any { it.label == label && it.score >= thr }
         fun hasAny(labels: Set<String>) = labels.any { has(it) }
@@ -372,6 +392,7 @@ object ImageJudge {
             }
 
             val femaleProb: Float? = face?.let { f -> genderOf(bmp, f) }
+            note(if (femaleProb != null) "מגדר: אישה ${f2(femaleProb)}" else "מגדר: לא נמצאו פנים")
             val isWoman = when {
                 femaleProb != null -> femaleProb >= genderThr
                 // לא רואים פנים (גב, צד, רחוק). ברגישות גבוהה — מניחים שזו אישה, ליתר ביטחון
@@ -385,11 +406,15 @@ object ImageJudge {
                 WomenLevel.ALL -> return true
                 WomenLevel.SWIMWEAR -> {
                     if (swimwearLabels >= labelThr * 0.7f) return true
-                    if (skinRatio(bmp, personRect, face) >= exposureThreshold(level, s)) return true
+                    val skin = skinRatio(bmp, personRect, face)
+                    note("עור חשוף: ${f2(skin)}")
+                    if (skin >= exposureThreshold(level, s)) return true
                 }
                 WomenLevel.PARTIAL -> {
                     if (revealingLabels >= labelThr * 0.7f) return true
-                    if (skinRatio(bmp, personRect, face) >= exposureThreshold(level, s)) return true
+                    val skin = skinRatio(bmp, personRect, face)
+                    note("עור חשוף: ${f2(skin)}")
+                    if (skin >= exposureThreshold(level, s)) return true
                 }
                 WomenLevel.OFF -> return false
             }

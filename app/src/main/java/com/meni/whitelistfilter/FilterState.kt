@@ -21,6 +21,15 @@ data class RequestEntry(
     val last: Long
 )
 
+/** החלטה על תמונה אחת בדפדפן — ליומן התמונות */
+data class ImageLogEntry(
+    val url: String,
+    val blocked: Boolean,
+    val reason: String,
+    val detail: String,
+    val time: Long
+)
+
 object FilterState {
     val running = MutableStateFlow(false)
     val log = MutableStateFlow<List<BlockEntry>>(emptyList())
@@ -72,9 +81,20 @@ object FilterState {
     val imagesChecked = MutableStateFlow(0)
     val imagesBlurred = MutableStateFlow(0)
 
+    val imageLog = MutableStateFlow<List<ImageLogEntry>>(emptyList())
+
     fun imageChecked(blurred: Boolean) {
         imagesChecked.update { it + 1 }
         if (blurred) imagesBlurred.update { it + 1 }
+    }
+
+    fun logImage(url: String, blocked: Boolean, reason: String, detail: String) {
+        val e = ImageLogEntry(url, blocked, reason, detail, System.currentTimeMillis())
+        imageLog.update { (listOf(e) + it).take(150) }
+    }
+
+    fun clearImageLog() {
+        imageLog.value = emptyList()
     }
 
     fun clearLog() {
