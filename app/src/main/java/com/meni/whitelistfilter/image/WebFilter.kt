@@ -113,11 +113,9 @@ class WebFilter(context: Context, private val userAgent: String) {
     }
 
     /**
-     * בקשת תמונה:
-     *  1. אם התמונה כבר נבדקה (מטמון בדיסק) — מחזירים אותה מיד.
-     *  2. אחרת פותחים חיבור לשרת ומחכים רק לתשובה הראשונה שלו (קוד, סוג, כותרות) — כמו דפדפן רגיל.
-     *     כך הדפדפן מקבל את הסוג והכותרות האמיתיים, ושום דבר בדף לא נשבר.
-     *  3. התוכן עצמו נקרא ונבדק במודלים רק כשהדפדפן קורא ממנו — ברקע, בלי לתקוע את שאר הדף.
+     * בקשת תמונה — מחזירים לדפדפן תשובה מיד, בלי לחכות לשרת, כדי שהדף עצמו ייטען מהר.
+     * ההורדה והבדיקה במודלים קורות רק כשהדפדפן קורא את התוכן — ברקע.
+     * תמונה שכבר נבדקה מגיעה ישר מהמטמון בדיסק.
      */
     private fun fetchAndFilter(request: WebResourceRequest, cfg: ImageFilterConfig): WebResourceResponse? {
         val urlStr = request.url.toString()
@@ -127,70 +125,77 @@ class WebFilter(context: Context, private val userAgent: String) {
             return WebResourceResponse(sniffMime(cached), null, 200, "OK", corsHeaders(origin, null), ByteArrayInputStream(cached))
         }
 
-        val conn = URL(urlStr).openConnection() as HttpURLConnection
-        conn.instanceFollowRedirects = true
-        conn.connectTimeout = 15_000
-        conn.readTimeout = 20_000
-        request.requestHeaders.forEach { (k, v) ->
-            if (!k.equals("Accept-Encoding", true) && !k.equals("Accept", true)) conn.setRequestProperty(k, v)
+        val ext = request.url.lastPathSegment?.substringAfterLast('.', "")?.lowercase() ?: ""
+        val mime = when (ext) {
+            "png" -> "image/png"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            "avif" -> "image/avif"
+            "bmp" -> "image/bmp"
+            else -> "image/jpeg" // הדפדפן מזהה תמונה רגילה לפי התוכן בכל מקרה
         }
-        // AVIF אנדרואיד יודע לפענח רק מגרסה 12. בגרסאות ישנות מבקשים פורמט אחר, כדי שנוכל לבדוק
-        conn.setRequestProperty(
-            "Accept",
-            if (Build.VERSION.SDK_INT >= 31) "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-            else "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-        )
-        if (conn.getRequestProperty("User-Agent") == null) conn.setRequestProperty("User-Agent", userAgent)
-        CookieManager.getInstance().getCookie(urlStr)?.let { conn.setRequestProperty("Cookie", it) }
-
-        val code = try {
-            conn.responseCode
-        } catch (e: Exception) {
-            conn.disconnect()
-            Log.w(TAG, "image $urlStr: ${e.message}")
-            return empty(502, "Bad Gateway")
-        }
-
-        // הפניה לדומיין אחר — גם הוא צריך להיות ברשימה
-        val finalHost = conn.url.host
-        if (finalHost != null && !isAllowedHost(finalHost)) {
-            conn.disconnect()
-            FilterState.block(uid, Rules.normalize(finalHost), true)
-            return empty(403, "Blocked")
-        }
-        conn.headerFields["Set-Cookie"]?.forEach { CookieManager.getInstance().setCookie(urlStr, it) }
-
-        val contentType = conn.contentType ?: ""
-        val mime = contentType.substringBefore(';').trim().lowercase().ifEmpty { "application/octet-stream" }
-        val reason = conn.responseMessage?.takeIf { it.isNotBlank() } ?: "OK"
-        val headers = corsHeaders(origin, conn)
-
-        // שגיאה מהשרת, SVG, או בכלל לא תמונה — מעבירים בדיוק כמו שהם, עם הסוג והכותרות המקוריים
-        val isRaster = mime.startsWith("image/") && !mime.contains("svg")
-        val maybeImage = isRaster || mime == "application/octet-stream" || mime == "binary/octet-stream"
-        if (code !in 200..299 || !maybeImage) {
-            val body: InputStream = (if (code >= 400) conn.errorStream else conn.inputStream)
-                ?: ByteArrayInputStream(ByteArray(0))
-            return WebResourceResponse(mime, charsetOf(contentType), code, reason, headers, ClosingStream(body, conn))
-        }
-
+        val reqHeaders = HashMap(request.requestHeaders)
         val stream = LazyStream {
             try {
-                val bytes = conn.inputStream.use { readLimited(it) }
-                if (bytes.isEmpty()) return@LazyStream bytes
-                val blocked = judge(bytes, cfg, urlStr)
-                FilterState.imageChecked(blocked != null)
-                val out = blocked?.second ?: bytes
-                DiskImageCache.put(ctx, cfg, urlStr, out)
-                out
+                loadAndJudge(urlStr, reqHeaders, cfg)
             } catch (e: Exception) {
                 Log.w(TAG, "image $urlStr: ${e.message}")
                 TRANSPARENT_GIF
-            } finally {
-                conn.disconnect()
             }
         }
-        return WebResourceResponse(if (isRaster) mime else "image/jpeg", null, code, reason, headers, stream)
+        return WebResourceResponse(mime, null, 200, "OK", corsHeaders(origin, null), stream)
+    }
+
+    /** מוריד את התמונה ובודק אותה. רץ ברקע, כשהדפדפן קורא את התוכן */
+    private fun loadAndJudge(urlStr: String, reqHeaders: Map<String, String>, cfg: ImageFilterConfig): ByteArray {
+        val conn = URL(urlStr).openConnection() as HttpURLConnection
+        try {
+            conn.instanceFollowRedirects = true
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 20_000
+            reqHeaders.forEach { (k, v) ->
+                if (!k.equals("Accept-Encoding", true) && !k.equals("Accept", true)) conn.setRequestProperty(k, v)
+            }
+            // AVIF אנדרואיד יודע לפענח רק מגרסה 12. בגרסאות ישנות מבקשים פורמט אחר, כדי שנוכל לבדוק
+            conn.setRequestProperty(
+                "Accept",
+                if (Build.VERSION.SDK_INT >= 31) "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
+                else "image/webp,image/apng,image/*,*/*;q=0.8"
+            )
+            if (conn.getRequestProperty("User-Agent") == null) conn.setRequestProperty("User-Agent", userAgent)
+            CookieManager.getInstance().getCookie(urlStr)?.let { conn.setRequestProperty("Cookie", it) }
+
+            val code = conn.responseCode
+            // הפניה לדומיין אחר — גם הוא צריך להיות ברשימה
+            val finalHost = conn.url.host
+            if (finalHost != null && !isAllowedHost(finalHost)) {
+                FilterState.block(uid, Rules.normalize(finalHost), true)
+                return TRANSPARENT_GIF
+            }
+            conn.headerFields["Set-Cookie"]?.forEach { CookieManager.getInstance().setCookie(urlStr, it) }
+
+            // שגיאה מהשרת — פיקסל שקוף במקום אייקון של תמונה שבורה
+            if (code !in 200..299) return TRANSPARENT_GIF
+            val bytes = conn.inputStream.use { readLimited(it) }
+            if (bytes.isEmpty()) return TRANSPARENT_GIF
+
+            // SVG בלי סיומת .svg — הדפדפן לא יציג אותו בלי הסוג הנכון, אז לפחות לא תמונה שבורה
+            val contentType = (conn.contentType ?: "").lowercase()
+            if (contentType.contains("svg") || looksLikeSvg(bytes)) return TRANSPARENT_GIF
+
+            val blocked = judge(bytes, cfg, urlStr)
+            FilterState.imageChecked(blocked != null)
+            val out = blocked?.second ?: bytes
+            DiskImageCache.put(ctx, cfg, urlStr, out)
+            return out
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun looksLikeSvg(b: ByteArray): Boolean {
+        val head = String(b, 0, minOf(b.size, 256), Charsets.UTF_8).trimStart()
+        return head.startsWith("<svg") || (head.startsWith("<?xml") && head.contains("<svg"))
     }
 
     /**
@@ -222,20 +227,6 @@ class WebFilter(context: Context, private val userAgent: String) {
         b.size >= 12 && b[8] == 'W'.code.toByte() && b[9] == 'E'.code.toByte() -> "image/webp"
         b.size >= 12 && b[4] == 'f'.code.toByte() && b[5] == 't'.code.toByte() -> "image/avif"
         else -> "image/jpeg"
-    }
-
-    /** זרם שסוגר גם את החיבור כשהדפדפן מסיים לקרוא */
-    private class ClosingStream(private val inner: InputStream, private val conn: HttpURLConnection) : InputStream() {
-        override fun read(): Int = inner.read()
-        override fun read(b: ByteArray, off: Int, len: Int): Int = inner.read(b, off, len)
-        override fun available(): Int = inner.available()
-        override fun close() {
-            try {
-                inner.close()
-            } finally {
-                conn.disconnect()
-            }
-        }
     }
 
     /** זרם שמחשב את התוכן שלו רק בקריאה הראשונה */

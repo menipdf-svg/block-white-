@@ -291,9 +291,11 @@ class BrowserActivity : ComponentActivity() {
         ImageFilterSettings.init(this)
         BrowserStore.init(this)
 
-        // טוענים את מודלי ה-AI ברקע כבר עכשיו, כדי שהתמונה הראשונה לא תחכה
+        // טוענים את מודלי ה-AI ברקע — אבל רק אחרי כמה שניות, כדי לא להתחרות בטעינת הדף הראשון
         val app = applicationContext
-        Thread({ ImageJudge.warmUp(app) }, "model-warmup").apply { priority = Thread.MIN_PRIORITY }.start()
+        Handler(Looper.getMainLooper()).postDelayed({
+            Thread({ ImageJudge.warmUp(app) }, "model-warmup").apply { priority = Thread.MIN_PRIORITY }.start()
+        }, 4000)
 
         userAgent = WebSettings.getDefaultUserAgent(this)
         filter = WebFilter(this, userAgent)
