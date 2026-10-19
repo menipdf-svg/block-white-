@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.os.Build
 import android.os.Process
 import android.util.Log
@@ -187,30 +188,35 @@ class WebFilter(context: Context, private val userAgent: String) {
     }
 
     /** טשטוש חזק: מקטינים מאוד ומגדילים חזרה לגודל המקורי, כדי שהעמוד לא יזוז */
+    /**
+     * תמונה שנחסמה מוחלפת במשטח אפור אחיד עם סימן "חסום".
+     * שום פיקסל מהתמונה המקורית לא נשאר — אי אפשר לנחש מה היה בה.
+     * הגודל נשמר כמו במקור, כדי שהעמוד לא יזוז.
+     */
+    @Suppress("UNUSED_PARAMETER")
     private fun blur(src: Bitmap, origW: Int, origH: Int): Pair<String, ByteArray> {
         val scale = minOf(1f, MAX_OUT_SIDE.toFloat() / max(origW, origH))
         val outW = max(1, (origW * scale).roundToInt())
         val outH = max(1, (origH * scale).roundToInt())
+        val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+        out.eraseColor(Color.rgb(200, 200, 200))
 
-        // מקטינים בהדרגה (חצי בכל פעם, כדי שכל הפיקסלים ישפיעו) עד רשת של 3×3 בלבד —
-        // נשארים רק הצבעים הכלליים, בלי שום צורה
-        var small = src
-        while (small.width > 6 || small.height > 6) {
-            val next = Bitmap.createScaledBitmap(small, max(1, small.width / 2), max(1, small.height / 2), true)
-            if (small !== src) small.recycle()
-            small = next
+        // סימן "חסום" במרכז: עיגול עם קו אלכסוני
+        val size = minOf(outW, outH) * 0.28f
+        if (size >= 14f) {
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = max(2f, size * 0.12f)
+                color = Color.rgb(150, 150, 150)
+            }
+            val cx = outW / 2f
+            val cy = outH / 2f
+            val r = size / 2f
+            val c = Canvas(out)
+            c.drawCircle(cx, cy, r, paint)
+            val d = r * 0.7071f
+            c.drawLine(cx - d, cy - d, cx + d, cy + d, paint)
         }
-        val grid = Bitmap.createScaledBitmap(small, 3, 3, true)
-        if (small !== src) small.recycle()
-
-        // מגדילים בשלבים, כדי שהמעבר בין הצבעים יהיה חלק לגמרי
-        val mid = Bitmap.createScaledBitmap(grid, 24, 24, true)
-        grid.recycle()
-        val out = Bitmap.createScaledBitmap(mid, outW, outH, true).copy(Bitmap.Config.ARGB_8888, true)
-        mid.recycle()
-
-        // שכבה אפורה חזקה מעל — כמעט לא רואים אפילו את הצבעים
-        Canvas(out).drawColor(Color.argb(150, 128, 128, 128))
         return encode(out)
     }
 
