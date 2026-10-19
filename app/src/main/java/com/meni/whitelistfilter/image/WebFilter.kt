@@ -147,6 +147,7 @@ class WebFilter(context: Context, private val userAgent: String) {
 
             if (code !in 200..299) return ByteArray(0)
             val bytes = conn.inputStream.use { readLimited(it) }
+            if (bytes.isEmpty()) return bytes
             val contentType = (conn.contentType ?: "").lowercase()
 
             // SVG (גרפיקה וקטורית — אייקונים) → מעבירים כמו שזה
@@ -194,8 +195,13 @@ class WebFilter(context: Context, private val userAgent: String) {
         val h = bounds.outHeight
 
         if (w <= 0 || h <= 0) {
-            // פורמט שלא הצלחנו לפענח
-            FilterState.logImage(url, cfg.blockUnchecked, "פורמט לא נתמך", "")
+            // רוב הבקשות האלה הן פיקסלי מעקב של פרסומות (תשובה ריקה או לא תמונה) — מעבירים בשקט.
+            // רק תמונה אמיתית בפורמט שאנדרואיד לא יודע לפענח (AVIF/HEIC) נחשבת "לא נבדקה".
+            val isRealImage = bytes.size >= 12 &&
+                bytes[4] == 'f'.code.toByte() && bytes[5] == 't'.code.toByte() &&
+                bytes[6] == 'y'.code.toByte() && bytes[7] == 'p'.code.toByte()
+            if (!isRealImage) return null
+            FilterState.logImage(url, cfg.blockUnchecked, "פורמט לא נתמך", "${bytes.size} bytes")
             return if (cfg.blockUnchecked) placeholder(320, 240) else null
         }
         if (w < MIN_SIDE || h < MIN_SIDE) return null
