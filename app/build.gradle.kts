@@ -35,8 +35,8 @@ android {
         applicationId = "com.meni.whitelistfilter"
         minSdk = 29
         targetSdk = 35
-        versionCode = 17
-        versionName = "4.0"
+        versionCode = 18
+        versionName = "4.0.1"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -101,9 +101,27 @@ val modelFiles = mapOf(
     // NudeNet של notAI-tech, רישיון AGPL-3.0
     "nudenet_320n.onnx" to
         "https://raw.githubusercontent.com/notAI-tech/NudeNet/6ccc81c6c305cccfd46d92b414f8a5c0a816574d/nudenet/320n.onnx",
+    // הגרסה הגדולה (640m). ב-GitHub היא דורשת התחברות, אז מורידים עותק מ-Hugging Face ומאמתים לפי SHA256
     "nudenet_640m.onnx" to
-        "https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.onnx"
+        "https://huggingface.co/spaces/Nymbo/Nudity-Censor/resolve/7955acb6e51995555fe4e5f2fcde7437004053a0/640m.onnx"
 )
+
+val modelSha256 = mapOf(
+    "nudenet_640m.onnx" to "04fe3d77980780c1f8297dc6d7f942fd5b3abe6942a188f742a85241e4f634eb"
+)
+
+fun sha256(f: File): String {
+    val md = java.security.MessageDigest.getInstance("SHA-256")
+    f.inputStream().use { input ->
+        val buf = ByteArray(1 shl 16)
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            md.update(buf, 0, n)
+        }
+    }
+    return md.digest().joinToString("") { "%02x".format(it) }
+}
 
 val downloadModels by tasks.registering {
     val dir = file("src/main/assets/models")
@@ -117,6 +135,21 @@ val downloadModels by tasks.registering {
                 val tmp = File(dir, "$name.part")
                 URI(url).toURL().openStream().use { input ->
                     tmp.outputStream().use { output -> input.copyTo(output) }
+                }
+                // דף אינטרנט במקום מודל (למשל דף התחברות) — עוצרים את הבנייה
+                val head = tmp.inputStream().use { it.readNBytes(16) }
+                if (tmp.length() < 100_000 || head.isNotEmpty() && head[0] == '<'.code.toByte() ||
+                    String(head).trimStart().startsWith("<")
+                ) {
+                    tmp.delete()
+                    throw GradleException("Model download for $name returned a web page, not a model: $url")
+                }
+                modelSha256[name]?.let { expected ->
+                    val actual = sha256(tmp)
+                    if (actual != expected) {
+                        tmp.delete()
+                        throw GradleException("SHA256 mismatch for $name: $actual")
+                    }
                 }
                 tmp.renameTo(target)
             }
