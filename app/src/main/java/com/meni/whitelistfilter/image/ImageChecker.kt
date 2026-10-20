@@ -28,13 +28,14 @@ class ImageChecker(context: Context) {
 
     /**
      * true = לחסום.
-     * [url] מזהה את התמונה במטמון: תמונה שכבר נבדקה (גם לפני הפעלה מחדש של הטלפון) לא נבדקת שוב.
-     * לתמונות מוטמעות בדף, בלי כתובת, המזהה הוא חתימה של התוכן.
+     * תמונה שכבר נבדקה (גם לפני הפעלה מחדש של הטלפון) לא נבדקת שוב — הזיהוי לפי התוכן שלה.
+     * [url] משמש רק ליומן.
      */
     fun isBlocked(bytes: ByteArray, url: String): Boolean {
         val cfg = ImageFilterSettings.config.value
         if (!cfg.active) return false
-        val id = if (url.startsWith("http")) "url:$url" else "inline:" + sha1(bytes)
+        // מזהים תמונה לפי התוכן שלה, לא לפי הכתובת: אתרים כמו אינסטגרם משנים את הכתובת בכל טעינה
+        val id = "img:" + sha1(bytes)
         DiskImageCache.getVerdict(ctx, cfg, id)?.let { return it }
 
         // אותה תמונה כבר בבדיקה (הדף ביקש אותה פעמיים) — מחכים לתוצאה במקום לבדוק שוב
