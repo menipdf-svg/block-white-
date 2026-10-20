@@ -14,6 +14,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.meni.whitelistfilter.FilterState
+import com.meni.whitelistfilter.debug.LogSync
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.meni.whitelistfilter.image.ImageCache
 import com.meni.whitelistfilter.image.ImageCategory
 import com.meni.whitelistfilter.image.ImageFilterSettings
@@ -30,6 +35,33 @@ fun ImagesScreen() {
     val blurred by FilterState.imagesBlurred.collectAsState()
     val imageLog by FilterState.imageLog.collectAsState()
     var showLog by remember { mutableStateOf(false) }
+    var sending by remember { mutableStateOf(false) }
+    var askToken by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    fun sendLog() {
+        if (LogSync.token(ctx) == null) {
+            askToken = true
+            return
+        }
+        sending = true
+        scope.launch {
+            val msg = withContext(Dispatchers.IO) { LogSync.send(ctx) }
+            sending = false
+            Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    if (askToken) {
+        TokenDialog(
+            onSave = { t ->
+                LogSync.setToken(ctx, t)
+                askToken = false
+                sendLog()
+            },
+            onDismiss = { askToken = false }
+        )
+    }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -178,12 +210,20 @@ fun ImagesScreen() {
                     Column(Modifier.weight(1f)) {
                         Text("מה המודל החליט על כל תמונה", style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "${imageLog.size} תמונות אחרונות. אם משהו נחסם או עבר בטעות — צלם את המסך הזה ושלח.",
+                            "${imageLog.size} תמונות אחרונות. אם משהו נחסם או עבר בטעות — לחץ \"שלח ל-Claude\".",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
                     Text(if (showLog) "▲" else "▼")
                 }
+            }
+        }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = { sendLog() }, enabled = !sending, modifier = Modifier.weight(1f)) {
+                    Text(if (sending) "שולח…" else "📤 שלח את היומן ל-Claude")
+                }
+                TextButton(onClick = { askToken = true }) { Text("טוקן") }
             }
         }
         if (showLog) {
@@ -225,4 +265,35 @@ fun ImagesScreen() {
             )
         }
     }
+}
+
+/** הגדרת טוקן GitHub לשליחת היומן */
+@Composable
+private fun TokenDialog(onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    var token by remember { mutableStateOf(LogSync.token(ctx) ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("טוקן GitHub") },
+        text = {
+            Column {
+                Text(
+                    "כדי לשלוח את היומן צריך טוקן GitHub (Fine-grained) לריפו block-white- בלבד, עם הרשאת Issues: Read and write. הטוקן נשמר רק בטלפון.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it.trim() },
+                    singleLine = true,
+                    label = { Text("github_pat_…") },
+                    visualTransformation = PasswordVisualTransformation()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(token) }, enabled = token.length > 20) { Text("שמור ושלח") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ביטול") } }
+    )
 }
