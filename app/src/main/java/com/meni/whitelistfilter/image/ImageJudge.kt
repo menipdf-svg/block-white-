@@ -70,6 +70,13 @@ object ImageJudge {
     }
 
     /** הסף של המודל הגדול להחלטה הסופית */
+    /** מעל הציון הזה המודל הקטן מחליט לבד, בלי המודל הגדול */
+    private fun quickSure(s: Sensitivity) = when (s) {
+        Sensitivity.LOW -> 0.85f
+        Sensitivity.MEDIUM -> 0.8f
+        Sensitivity.HIGH -> 0.75f
+    }
+
     private fun decide(s: Sensitivity) = when (s) {
         Sensitivity.LOW -> 0.55f
         Sensitivity.MEDIUM -> 0.45f
@@ -192,6 +199,18 @@ object ImageJudge {
             val chance = quick.filter { it.label in FEMALE_SIGNALS }.maxOfOrNull { it.score } ?: 0f
             note("סבירות לאישה: ${f2(chance)}")
             if (chance < gate(s)) return reasons
+
+            // המודל הקטן בטוח מאוד — מחליטים בלי המודל הגדול (חוסך 3-5 שניות לתמונה).
+            // רק ב"חסימה מלאה", ורק אם על אותם פנים הוא לא ראה גבר בציון גבוה יותר.
+            val quickResolved = resolveFaces(quick)
+            val sureQuick = quickResolved.any {
+                (it.label == "FACE_FEMALE" || it.label in EXPLICIT) && it.score >= quickSure(s)
+            }
+            if (sureQuick && (women == WomenLevel.ALL || quickResolved.any { it.label in EXPLICIT && it.score >= quickSure(s) })) {
+                note("הוחלט לפי 320n (בטוח)")
+                reasons += "WOMEN_NUDENET"
+                return reasons
+            }
 
             // שלב 2: המודל הגדול מחליט
             val sure: List<NudeDetection> = heavyModel(ctx)?.let { m ->

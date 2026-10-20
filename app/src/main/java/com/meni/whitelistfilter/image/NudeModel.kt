@@ -68,7 +68,7 @@ class NudeModel(ctx: Context, assetPath: String, private val size: Int) {
             ctx.assets.open(assetPath).use { input -> tmp.outputStream().use { input.copyTo(it) } }
             tmp.renameTo(file)
         }
-        val threads = if (size > 320) 4 else 2
+        val threads = if (size > 320) 6 else 2
         val path = file.absolutePath
         val attempts = buildList<Pair<String, () -> OrtSession>> {
             // המודל הגדול: קודם שבב ה-AI של הטלפון (NNAPI, בחצי דיוק) — הכי מהיר

@@ -6,6 +6,9 @@ import android.graphics.BitmapFactory
 import android.util.Log
 import com.meni.whitelistfilter.FilterState
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.math.max
 
 /**
@@ -33,11 +36,32 @@ class ImageChecker(context: Context) {
         if (!cfg.active) return false
         val id = if (url.startsWith("http")) "url:$url" else "inline:" + sha1(bytes)
         DiskImageCache.getVerdict(ctx, cfg, id)?.let { return it }
-        val blocked = judge(bytes, cfg, url)
-        DiskImageCache.putVerdict(ctx, cfg, id, blocked)
-        FilterState.imageChecked(blocked)
-        return blocked
+
+        // אותה תמונה כבר בבדיקה (הדף ביקש אותה פעמיים) — מחכים לתוצאה במקום לבדוק שוב
+        val mine = Pending()
+        val running = inFlight.putIfAbsent(id, mine)
+        if (running != null) {
+            running.done.await(60, TimeUnit.SECONDS)
+            return running.blocked ?: cfg.blockUnchecked
+        }
+        try {
+            val blocked = judge(bytes, cfg, url)
+            DiskImageCache.putVerdict(ctx, cfg, id, blocked)
+            FilterState.imageChecked(blocked)
+            mine.blocked = blocked
+            return blocked
+        } finally {
+            inFlight.remove(id)
+            mine.done.countDown()
+        }
     }
+
+    private class Pending {
+        @Volatile var blocked: Boolean? = null
+        val done = CountDownLatch(1)
+    }
+
+    private val inFlight = ConcurrentHashMap<String, Pending>()
 
     private fun judge(bytes: ByteArray, cfg: ImageFilterConfig, url: String): Boolean {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

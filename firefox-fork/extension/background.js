@@ -26,7 +26,7 @@ function bytesToB64(bytes) {
   return btoa(s);
 }
 
-/** שולח לאפליקציה ומחכה לתשובה. בלי תשובה תוך 15 שניות — נחשב חסום */
+/** שולח לאפליקציה ומחכה לתשובה. בלי תשובה תוך 45 שניות — נחשב חסום */
 function ask(msg) {
   return new Promise(res => {
     const id = ++seq;
@@ -35,7 +35,7 @@ function ask(msg) {
     port.postMessage(msg);
     setTimeout(() => {
       if (pending.has(id)) { pending.delete(id); res({ blocked: true, timeout: true }); }
-    }, 15000);
+    }, 45000);
   });
 }
 
