@@ -62,9 +62,7 @@ object Protection {
                     d.setAlwaysOnVpnPackage(a, if (on) ctx.packageName else null, on)
                 Lock.NO_UNINSTALL -> {
                     d.setUninstallBlocked(a, ctx.packageName, on)
-                    if (Build.VERSION.SDK_INT >= 30) {
-                        d.setUserControlDisabledPackages(a, if (on) listOf(ctx.packageName) else emptyList())
-                    }
+                    applyUserControl(ctx)
                 }
                 else -> {
                     val r = restriction(lock)!!
@@ -78,10 +76,53 @@ object Protection {
         }
     }
 
+    // ---------- אפליקציות מוגנות (למשל TextPlay ו-Spotify) ----------
+
+    private fun securityPrefs(ctx: Context) = ctx.getSharedPreferences("security", Context.MODE_PRIVATE)
+
+    /** אפליקציות שאי אפשר להסיר, לעצור או למחוק להן נתונים */
+    fun protectedPackages(ctx: Context): Set<String> =
+        securityPrefs(ctx).getStringSet("protected", emptySet()).orEmpty()
+
+    fun isProtected(ctx: Context, pkg: String): Boolean {
+        if (!isOwner(ctx)) return false
+        return try {
+            dpm(ctx).isUninstallBlocked(admin(ctx), pkg)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun setProtected(ctx: Context, pkg: String, on: Boolean): Boolean {
+        if (!isOwner(ctx)) return false
+        return try {
+            dpm(ctx).setUninstallBlocked(admin(ctx), pkg, on)
+            val set = protectedPackages(ctx).toMutableSet().apply { if (on) add(pkg) else remove(pkg) }
+            securityPrefs(ctx).edit().putStringSet("protected", set).apply()
+            applyUserControl(ctx)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** "עצירה בכוח" ו"מחיקת נתונים" חסומים למסנן (אם נעול) ולכל האפליקציות המוגנות */
+    private fun applyUserControl(ctx: Context) {
+        if (Build.VERSION.SDK_INT < 30) return
+        val d = dpm(ctx)
+        val a = admin(ctx)
+        val list = buildList {
+            if (d.isUninstallBlocked(a, ctx.packageName)) add(ctx.packageName)
+            addAll(protectedPackages(ctx))
+        }
+        d.setUserControlDisabledPackages(a, list)
+    }
+
     /** מסיר את כל הנעילות ואת הרשאת Device Owner */
     @Suppress("DEPRECATION")
     fun removeOwner(ctx: Context) {
         Lock.entries.forEach { set(ctx, it, false) }
+        protectedPackages(ctx).forEach { setProtected(ctx, it, false) }
         try {
             dpm(ctx).clearDeviceOwnerApp(ctx.packageName)
         } catch (_: Exception) {

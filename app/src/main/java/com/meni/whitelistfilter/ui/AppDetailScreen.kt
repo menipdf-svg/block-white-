@@ -14,6 +14,9 @@ import androidx.compose.ui.unit.dp
 import com.meni.whitelistfilter.AppRule
 import com.meni.whitelistfilter.FilterState
 import com.meni.whitelistfilter.Mode
+import com.meni.whitelistfilter.Protection
+import com.meni.whitelistfilter.SPOTIFY_IMAGE_DOMAINS
+import com.meni.whitelistfilter.SPOTIFY_PACKAGE
 import com.meni.whitelistfilter.RequestEntry
 import com.meni.whitelistfilter.Rules
 import com.meni.whitelistfilter.RulesData
@@ -32,6 +35,7 @@ private sealed class Status {
 
 private fun statusOf(e: RequestEntry, pkg: String, data: RulesData): Status {
     val rule = data.apps[pkg] ?: AppRule()
+    if (e.isDomain && Rules.firstMatch(rule.blocked, e.target) != null) return Status.Blocked
     return when (rule.mode) {
         Mode.BLOCK -> Status.Blocked
         Mode.OPEN -> Status.Open
@@ -97,6 +101,32 @@ fun AppDetailScreen(pkg: String, onBack: () -> Unit) {
         }
         item { Text(modeDescription(rule.mode), style = MaterialTheme.typography.bodyMedium) }
 
+        // ----- הגנה מהסרה -----
+        item { ProtectCard(pkg) }
+
+        // ----- Spotify: בלי תמונות -----
+        if (pkg == SPOTIFY_PACKAGE) {
+            item {
+                val allOn = SPOTIFY_IMAGE_DOMAINS.all { it in rule.blocked }
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Spotify בלי תמונות", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "חוסם ל-Spotify את שרתי התמונות (עטיפות, תמונות אמנים, וידאו קנבס). המוזיקה ממשיכה לעבוד.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        if (allOn) {
+                            Text("✅ פעיל", style = MaterialTheme.typography.bodyMedium)
+                        } else {
+                            Button(onClick = { Rules.addAppBlocked(pkg, SPOTIFY_IMAGE_DOMAINS) }) {
+                                Text("חסום תמונות של Spotify")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // ----- הדומיינים שהאפליקציה ביקשה -----
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -122,6 +152,19 @@ fun AppDetailScreen(pkg: String, onBack: () -> Unit) {
         }
         items(sorted, key = { "r_${it.target}" }) { e ->
             RequestRow(pkg, e, statusOf(e, pkg, rules), rule.mode, fmt.format(Date(e.last)))
+        }
+
+        // ----- חסומים תמיד -----
+        item { SectionTitle("חסומים תמיד לאפליקציה הזו (${rule.blocked.size})") }
+        item {
+            Text(
+                "נחסמים בכל מצב — גם ב\"פתוח\" וגם אם הם ברשימה הכללית.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        item { DomainInput { Rules.addAppBlocked(pkg, listOf(it)) } }
+        items(rule.blocked.sorted(), key = { "b_$it" }) { d ->
+            DomainRow(d, "הסר") { Rules.removeAppBlocked(pkg, d) }
         }
 
         // ----- דומיינים שאושרו לאפליקציה -----
@@ -180,9 +223,43 @@ private fun RequestRow(pkg: String, e: RequestEntry, status: Status, mode: Mode,
                         else -> {}
                     }
                 }
-            } else if (!e.isDomain && blocked) {
+            }
+            if (e.isDomain && !blocked) {
+                TextButton(onClick = { Rules.addAppBlocked(pkg, listOf(Rules.normalize(e.target))) }) {
+                    Text("חסום תמיד")
+                }
+            }
+            if (!e.isDomain && blocked) {
                 Text("כתובת IP בלי שם — אי אפשר לאשר", style = MaterialTheme.typography.bodySmall)
             }
+        }
+    }
+}
+
+/** הגנה מהסרה / עצירה / מחיקת נתונים לאפליקציה הזו (דורש Device Owner) */
+@Composable
+private fun ProtectCard(pkg: String) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val owner = remember { Protection.isOwner(ctx) }
+    var on by remember(pkg) { mutableStateOf(Protection.isProtected(ctx, pkg)) }
+    Card(Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("מניעת הסרה ומחיקת נתונים", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (owner) "אי אפשר להסיר את האפליקציה, לעצור אותה או למחוק את הנתונים שלה"
+                    else "דורש הרשאת Device Owner (במסך הסטטוס)",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Switch(
+                checked = on,
+                enabled = owner,
+                onCheckedChange = {
+                    Protection.setProtected(ctx, pkg, it)
+                    on = Protection.isProtected(ctx, pkg)
+                }
+            )
         }
     }
 }

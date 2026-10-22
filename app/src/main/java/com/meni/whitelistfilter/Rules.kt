@@ -12,8 +12,31 @@ import java.util.concurrent.ConcurrentHashMap
 
 data class AppRule(
     val mode: Mode = Mode.WHITELIST,
-    val domains: Set<String> = emptySet()
+    val domains: Set<String> = emptySet(),
+    /** חסומים תמיד לאפליקציה הזו — גם במצב "פתוח" וגם אם מאושרים ברשימה הכללית */
+    val blocked: Set<String> = emptySet()
 )
+
+/** שרתי התמונות של Spotify (עטיפות, תמונות אמנים, קנבס). לא כולל את שרתי השמע. */
+val SPOTIFY_IMAGE_DOMAINS = setOf(
+    "i.scdn.co",
+    "mosaic.scdn.co",
+    "seeded-session-images.scdn.co",
+    "lineup-images.scdn.co",
+    "charts-images.scdn.co",
+    "daily-mix.scdn.co",
+    "newjams-images.scdn.co",
+    "canvaz.scdn.co",
+    "image-cdn-ak.spotifycdn.com",
+    "image-cdn-fa.spotifycdn.com",
+    "thisis-images.spotifycdn.com",
+    "pickasso.spotifycdn.com",
+    "blend-playlist-covers.spotifycdn.com",
+    "wrapped-images.spotifycdn.com",
+    "misc.scdn.co"
+)
+
+const val SPOTIFY_PACKAGE = "com.spotify.music"
 
 data class RulesData(
     val global: Set<String> = emptySet(),
@@ -100,6 +123,7 @@ object Rules {
     /** האם האפליקציה הזו רשאית לגשת לדומיין */
     fun isAllowed(uid: Int, domain: String): Boolean {
         val rule = ruleForUid(uid)
+        if (matches(rule.blocked, domain)) return false
         return when (rule.mode) {
             Mode.BLOCK -> false
             Mode.OPEN -> true
@@ -135,6 +159,17 @@ object Rules {
         it.copy(apps = it.apps + (pkg to r.copy(domains = r.domains - domain)))
     }
 
+    fun addAppBlocked(pkg: String, domains: Collection<String>) = change {
+        val r = it.apps[pkg] ?: AppRule()
+        val add = domains.map(::normalize).filter(::valid)
+        it.copy(apps = it.apps + (pkg to r.copy(blocked = r.blocked + add)))
+    }
+
+    fun removeAppBlocked(pkg: String, domain: String) = change {
+        val r = it.apps[pkg] ?: AppRule()
+        it.copy(apps = it.apps + (pkg to r.copy(blocked = r.blocked - domain)))
+    }
+
     private fun change(block: (RulesData) -> RulesData) {
         _data.update(block)
         prefs.edit().putString(KEY, save(_data.value)).apply()
@@ -152,7 +187,12 @@ object Rules {
     private fun save(d: RulesData): String {
         val apps = JSONObject()
         d.apps.forEach { (pkg, r) ->
-            apps.put(pkg, JSONObject().put("mode", r.mode.name).put("domains", JSONArray(r.domains.toList())))
+            apps.put(
+                pkg,
+                JSONObject().put("mode", r.mode.name)
+                    .put("domains", JSONArray(r.domains.toList()))
+                    .put("blocked", JSONArray(r.blocked.toList()))
+            )
         }
         return JSONObject().put("global", JSONArray(d.global.toList())).put("apps", apps).toString()
     }
@@ -171,7 +211,7 @@ object Rules {
                 } catch (_: Exception) {
                     Mode.WHITELIST
                 }
-                apps[pkg] = AppRule(mode, r.optJSONArray("domains").toSet())
+                apps[pkg] = AppRule(mode, r.optJSONArray("domains").toSet(), r.optJSONArray("blocked").toSet())
             }
             RulesData(global, apps)
         } catch (_: Exception) {
