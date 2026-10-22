@@ -3,6 +3,7 @@
 package com.meni.whitelistfilter.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -39,6 +40,8 @@ private fun statusOf(e: RequestEntry, pkg: String, data: RulesData): Status {
     return when (rule.mode) {
         Mode.BLOCK -> Status.Blocked
         Mode.OPEN -> Status.Open
+        Mode.BLACKLIST ->
+            if (e.isDomain && Rules.firstMatch(data.globalBlack, e.target) != null) Status.Blocked else Status.Open
         Mode.WHITELIST -> {
             if (!e.isDomain) return Status.Blocked
             Rules.firstMatch(data.global, e.target)?.let { return Status.Global(it) }
@@ -89,7 +92,10 @@ fun AppDetailScreen(pkg: String, onBack: () -> Unit) {
         // ----- מצב הגישה -----
         item { SectionTitle("גישה לאינטרנט") }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Mode.entries.forEach { m ->
                     FilterChip(
                         selected = rule.mode == m,

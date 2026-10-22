@@ -79,6 +79,7 @@ fun ModeBadge(mode: Mode, extra: Int) {
     val color = when (mode) {
         Mode.BLOCK -> Color(0xFFC62828)
         Mode.WHITELIST -> Color(0xFF1E6B52)
+        Mode.BLACKLIST -> Color(0xFF37474F)
         Mode.OPEN -> Color(0xFFE08A00)
     }
     val text = if (mode == Mode.WHITELIST && extra > 0) "${mode.title} +$extra" else mode.title
@@ -95,5 +96,6 @@ fun ModeBadge(mode: Mode, extra: Int) {
 fun modeDescription(mode: Mode) = when (mode) {
     Mode.BLOCK -> "האפליקציה לא מקבלת אינטרנט בכלל"
     Mode.WHITELIST -> "רק דומיינים מהרשימה הכללית ומהרשימה של האפליקציה הזו"
+    Mode.BLACKLIST -> "הכל מותר, חוץ מהרשימה השחורה הכללית ומהחסומים של האפליקציה הזו"
     Mode.OPEN -> "גישה מלאה לכל האינטרנט, בלי סינון"
 }

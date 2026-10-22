@@ -34,6 +34,19 @@ fun DomainsScreen() {
         items(rules.global.sorted(), key = { it }) { d ->
             DomainRow(d, "הסר") { Rules.removeGlobal(d) }
         }
+
+        item { Spacer(Modifier.height(16.dp)) }
+        item { SectionTitle("רשימה שחורה כללית (${rules.globalBlack.size})") }
+        item {
+            Text(
+                "דומיינים שנחסמים לכל האפליקציות שבמצב רשימה שחורה. תת-דומיינים נכללים אוטומטית.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        item { DomainInput { Rules.addGlobalBlack(it) } }
+        items(rules.globalBlack.sorted(), key = { "black_$it" }) { d ->
+            DomainRow(d, "הסר") { Rules.removeGlobalBlack(d) }
+        }
         item { Spacer(Modifier.height(24.dp)) }
     }
 }

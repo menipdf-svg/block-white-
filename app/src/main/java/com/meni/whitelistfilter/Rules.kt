@@ -40,6 +40,8 @@ const val SPOTIFY_PACKAGE = "com.spotify.music"
 
 data class RulesData(
     val global: Set<String> = emptySet(),
+    /** רשימה שחורה כללית — נחסמת לכל האפליקציות שבמצב "רשימה שחורה" */
+    val globalBlack: Set<String> = emptySet(),
     val apps: Map<String, AppRule> = emptyMap()
 )
 
@@ -128,6 +130,7 @@ object Rules {
             Mode.BLOCK -> false
             Mode.OPEN -> true
             Mode.WHITELIST -> matches(_data.value.global, domain) || matches(rule.domains, domain)
+            Mode.BLACKLIST -> !matches(_data.value.globalBlack, domain)
         }
     }
 
@@ -140,6 +143,14 @@ object Rules {
     }
 
     fun removeGlobal(domain: String) = change { it.copy(global = it.global - domain) }
+
+    fun addGlobalBlack(raw: String) {
+        val d = normalize(raw)
+        if (!valid(d)) return
+        change { it.copy(globalBlack = it.globalBlack + d) }
+    }
+
+    fun removeGlobalBlack(domain: String) = change { it.copy(globalBlack = it.globalBlack - domain) }
 
     fun setMode(pkg: String, mode: Mode) = change {
         it.copy(apps = it.apps + (pkg to (it.apps[pkg] ?: AppRule()).copy(mode = mode)))
@@ -194,7 +205,10 @@ object Rules {
                     .put("blocked", JSONArray(r.blocked.toList()))
             )
         }
-        return JSONObject().put("global", JSONArray(d.global.toList())).put("apps", apps).toString()
+        return JSONObject()
+            .put("global", JSONArray(d.global.toList()))
+            .put("globalBlack", JSONArray(d.globalBlack.toList()))
+            .put("apps", apps).toString()
     }
 
     private fun load(json: String?): RulesData {
@@ -213,7 +227,7 @@ object Rules {
                 }
                 apps[pkg] = AppRule(mode, r.optJSONArray("domains").toSet(), r.optJSONArray("blocked").toSet())
             }
-            RulesData(global, apps)
+            RulesData(global, o.optJSONArray("globalBlack").toSet(), apps)
         } catch (_: Exception) {
             RulesData()
         }

@@ -197,7 +197,8 @@ class LocalProxy(private val policy: ProxyPolicy) {
 
         val allowed = when (mode) {
             Mode.BLOCK -> false
-            Mode.OPEN -> true
+            // פתוח / רשימה שחורה: הכל מותר, חוץ מדומיינים חסומים (גם שם האתר שבתוך HTTPS נבדק בהמשך)
+            Mode.OPEN, Mode.BLACKLIST -> target.domain == null || policy.isAllowed(uid, target.domain)
             // דומיין — לפי הרשימה. כתובת IP בלי שם — רק HTTPS, ושם האתר ייבדק בהמשך
             Mode.WHITELIST -> if (target.domain != null) policy.isAllowed(uid, target.domain) else target.port == 443
         }
@@ -216,14 +217,15 @@ class LocalProxy(private val policy: ProxyPolicy) {
             reply(output, 0)
             var first: ByteArray? = null
             var seenName: String? = target.domain
-            if (mode == Mode.WHITELIST && target.port == 443) {
+            if (target.port == 443) {
                 // בודקים גם את שם האתר שבתוך HTTPS, לפני שמשהו מגיע לשרת
                 val (bytes, host) = readClientHello(client, input)
                 if (host != null && !policy.isAllowed(uid, host)) {
                     policy.blocked(uid, host, true)
                     return
                 }
-                if (host == null && target.domain == null) {
+                // ברשימה לבנה: בלי שם אתר — חוסמים. בפתוח / רשימה שחורה — מעבירים
+                if (mode == Mode.WHITELIST && host == null && target.domain == null) {
                     blocked(uid, target)
                     return
                 }
@@ -331,8 +333,9 @@ class LocalProxy(private val policy: ProxyPolicy) {
         val allowed = when {
             // DNS רק דרך המסנן, ו-QUIC חוזר ל-HTTPS רגיל שבו נבדק שם האתר
             dest.port == 53 || dest.port == 443 -> false
-            mode == Mode.OPEN -> true
             mode == Mode.BLOCK -> false.also { blocked(uid, dest) }
+            mode == Mode.OPEN || mode == Mode.BLACKLIST ->
+                (dest.domain == null || policy.isAllowed(uid, dest.domain)).also { if (!it) blocked(uid, dest) }
             dest.domain != null -> policy.isAllowed(uid, dest.domain).also { if (!it) blocked(uid, dest) }
             else -> false.also { blocked(uid, dest) }
         }
