@@ -5,6 +5,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.os.Build
+import android.os.Bundle
 import android.os.UserManager
 import java.security.MessageDigest
 
@@ -22,7 +23,23 @@ enum class Lock(val title: String, val desc: String) {
     NO_DEBUGGING("חסימת אפשרויות מפתח", "חוסם ADB. שים לב: גם אתה לא תוכל להשתמש ב-ADB")
 }
 
+/** מדיניות שנכפית על כרום דרך Device Owner (הגדרות מנוהלות — אי אפשר לשנות אותן בתוך כרום) */
+enum class ChromeLock(val title: String, val desc: String, val key: String) {
+    SAFE_BROWSING(
+        "Safe Browsing מוגבר בכרום",
+        "כרום מזהיר וחוסם אתרים מסוכנים, ואי אפשר לכבות את זה בהגדרות כרום",
+        "SafeBrowsingProtectionLevel"
+    ),
+    SAFE_SEARCH(
+        "חיפוש בטוח בכרום (SafeSearch)",
+        "גוגל מסננת תוצאות חיפוש בוטות, ואי אפשר לכבות את זה",
+        "ForceGoogleSafeSearch"
+    )
+}
+
 object Protection {
+    const val CHROME_PACKAGE = "com.android.chrome"
+
     fun admin(ctx: Context) = ComponentName(ctx, AdminReceiver::class.java)
     private fun dpm(ctx: Context) = ctx.getSystemService(DevicePolicyManager::class.java)
 
@@ -69,7 +86,7 @@ object Protection {
                 else -> {
                     val r = restriction(lock)!!
                     if (on) d.addUserRestriction(a, r) else d.clearUserRestriction(a, r)
-                    if (lock == Lock.NO_PRIVATE_DNS && on) d.setGlobalPrivateDnsModeOpportunistic(a)
+                    if (lock == Lock.NO_PRIVATE_DNS && on && forcedDnsHost(ctx) == null) d.setGlobalPrivateDnsModeOpportunistic(a)
                 }
             }
             true
@@ -120,10 +137,89 @@ object Protection {
         d.setUserControlDisabledPackages(a, list)
     }
 
+    // ---------- כרום ----------
+
+    fun isChromeOn(ctx: Context, lock: ChromeLock): Boolean {
+        if (!isOwner(ctx)) return false
+        return try {
+            val b = dpm(ctx).getApplicationRestrictions(admin(ctx), CHROME_PACKAGE)
+            when (lock) {
+                ChromeLock.SAFE_BROWSING -> b.getInt(lock.key, 0) == 2
+                ChromeLock.SAFE_SEARCH -> b.getBoolean(lock.key, false)
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun setChrome(ctx: Context, lock: ChromeLock, on: Boolean): Boolean {
+        if (!isOwner(ctx)) return false
+        return try {
+            val d = dpm(ctx)
+            val a = admin(ctx)
+            val b = Bundle(d.getApplicationRestrictions(a, CHROME_PACKAGE))
+            if (!on) b.remove(lock.key) else when (lock) {
+                ChromeLock.SAFE_BROWSING -> b.putInt(lock.key, 2) // 2 = מוגבר
+                ChromeLock.SAFE_SEARCH -> b.putBoolean(lock.key, true)
+            }
+            d.setApplicationRestrictions(a, CHROME_PACKAGE, b)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun isChromeInstalled(ctx: Context): Boolean = try {
+        ctx.packageManager.getApplicationInfo(CHROME_PACKAGE, 0)
+        true
+    } catch (_: Exception) {
+        false
+    }
+
+    // ---------- DNS נכפה (DNS פרטי של המערכת, DoT) ----------
+
+    /** שם השרת שנכפה כרגע, או null אם אין כפייה */
+    fun forcedDnsHost(ctx: Context): String? {
+        if (!isOwner(ctx)) return null
+        return try {
+            val d = dpm(ctx)
+            val a = admin(ctx)
+            if (d.getGlobalPrivateDnsMode(a) == DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME) {
+                d.getGlobalPrivateDnsHost(a)
+            } else {
+                null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * host = שם שרת DNS פרטי לכפייה. null = ביטול הכפייה (חזרה למצב אוטומטי).
+     * הבדיקה של השרת היא פעולת רשת, ולכן לא קוראים לזה מה-thread הראשי.
+     */
+    fun setForcedDns(ctx: Context, host: String?): Boolean {
+        if (!isOwner(ctx)) return false
+        return try {
+            val d = dpm(ctx)
+            val a = admin(ctx)
+            if (host == null) {
+                d.setGlobalPrivateDnsModeOpportunistic(a)
+                true
+            } else {
+                d.setGlobalPrivateDnsModeSpecifiedHost(a, host) == DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     /** מסיר את כל הנעילות ואת הרשאת Device Owner */
     @Suppress("DEPRECATION")
     fun removeOwner(ctx: Context) {
         Lock.entries.forEach { set(ctx, it, false) }
+        ChromeLock.entries.forEach { setChrome(ctx, it, false) }
+        setForcedDns(ctx, null)
         protectedPackages(ctx).forEach { setProtected(ctx, it, false) }
         try {
             dpm(ctx).clearDeviceOwnerApp(ctx.packageName)

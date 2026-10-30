@@ -2,6 +2,7 @@
 
 package com.meni.whitelistfilter.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -24,6 +25,9 @@ fun Root(onStart: () -> Unit, onStop: () -> Unit) {
         return
     }
 
+    var settings by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = settings) { settings = false }
+
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var openApp by rememberSaveable { mutableStateOf<String?>(null) }
     val tabs = listOf("🛡️" to "סטטוס", "📱" to "אפליקציות", "🌐" to "דומיינים", "🖼️" to "תמונות", "📦" to "התקנות", "📋" to "יומן")
@@ -37,6 +41,7 @@ fun Root(onStart: () -> Unit, onStop: () -> Unit) {
                         onClick = {
                             tab = i
                             openApp = null
+                            settings = false
                         },
                         icon = { Text(icon) },
                         label = { Text(title) }
@@ -45,16 +50,24 @@ fun Root(onStart: () -> Unit, onStop: () -> Unit) {
             }
         }
     ) { pad ->
-        Box(Modifier.padding(pad).fillMaxSize().imePadding()) {
-            val app = openApp
-            when {
-                app != null -> AppDetailScreen(app, onBack = { openApp = null })
-                tab == 0 -> StatusScreen(onStart, onStop)
-                tab == 1 -> AppsScreen(onOpen = { openApp = it })
-                tab == 2 -> DomainsScreen()
-                tab == 3 -> ImagesScreen()
-                tab == 4 -> InstallsScreen()
-                else -> LogScreen()
+        Column(Modifier.padding(pad).fillMaxSize().imePadding()) {
+            if (!settings) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { settings = true }) { Text("⚙️ הגדרות") }
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                val app = openApp
+                when {
+                    settings -> SettingsScreen(onBack = { settings = false })
+                    app != null -> AppDetailScreen(app, onBack = { openApp = null })
+                    tab == 0 -> StatusScreen(onStart, onStop)
+                    tab == 1 -> AppsScreen(onOpen = { openApp = it })
+                    tab == 2 -> DomainsScreen()
+                    tab == 3 -> ImagesScreen()
+                    tab == 4 -> InstallsScreen()
+                    else -> LogScreen()
+                }
             }
         }
     }
