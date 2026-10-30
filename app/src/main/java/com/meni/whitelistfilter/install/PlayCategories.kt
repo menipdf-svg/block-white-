@@ -5,6 +5,9 @@ data class PlayCategory(val id: String, val title: String)
 /** הקטגוריות של Google Play, כפי שהן מופיעות בדף האפליקציה (applicationCategory) */
 object PlayCategories {
 
+    /** כל אפליקציה שיודעת לפתוח אתרי אינטרנט (דפדפן), בלי קשר לקטגוריה שלה בגוגל פליי */
+    const val BROWSER = "BROWSER"
+
     /** אפליקציה שלא קיימת ב-Google Play (למשל הותקנה מ-APK) */
     const val NOT_ON_PLAY = "NOT_ON_PLAY"
 
@@ -12,6 +15,7 @@ object PlayCategories {
     const val ALL_GAMES = "ALL_GAMES"
 
     val special = listOf(
+        PlayCategory(BROWSER, "דפדפנים"),
         PlayCategory(NOT_ON_PLAY, "לא נמצאות ב-Google Play")
     )
 

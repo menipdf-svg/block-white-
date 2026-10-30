@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.net.Uri
 import com.meni.whitelistfilter.Protection
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -138,7 +139,12 @@ object InstallGuard {
             setSuspended(ctx, pkg, true)
             record(ctx, pkg, null, GuardState.CHECKING)
 
-            val category = categoryFor(ctx, pkg)
+            // דפדפן מזוהה מקומית (בלי אינטרנט), לפני הבדיקה בגוגל פליי
+            val category = if (InstallSettings.isBlocked(ctx, PlayCategories.BROWSER) && isBrowser(ctx, pkg)) {
+                PlayCategories.BROWSER
+            } else {
+                categoryFor(ctx, pkg)
+            }
             if (category == null) {
                 record(ctx, pkg, null, GuardState.RETRY)
                 val delay = minOf(MAX_RETRY_SECONDS, 30L shl minOf(attempt, 5))
@@ -192,7 +198,23 @@ object InstallGuard {
         if (!isUserApp(ctx, info)) return false
         if (pkg in InstallSettings.allowed(ctx)) return false
         if (pkg in Protection.protectedPackages(ctx)) return false
+        // הפיירפוקס המסונן של הפרויקט הזה — אף פעם לא נחסם
+        if (pkg.startsWith("org.mozilla.fenix")) return false
         return true
+    }
+
+    /**
+     * דפדפן = אפליקציה שרשומה לפתוח כל כתובת http/https (לא רק אתר מסוים).
+     * כך מזוהים גם דפדפנים שגוגל פליי מסווגת בקטגוריות שונות.
+     */
+    @Suppress("DEPRECATION")
+    private fun isBrowser(ctx: Context, pkg: String): Boolean {
+        val pm = ctx.packageManager
+        return listOf("https://www.example.com", "http://www.example.com").any { url ->
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+            pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)
+                .any { it.activityInfo?.packageName == pkg }
+        }
     }
 
     private fun isUserApp(ctx: Context, info: ApplicationInfo): Boolean =
