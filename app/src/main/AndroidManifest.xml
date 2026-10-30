@@ -6,6 +6,8 @@
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+    <!-- הסרה שקטה של אפליקציות בקטגוריה חסומה (Device Owner) -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
     <application
         android:allowBackup="false"

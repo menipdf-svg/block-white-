@@ -1,9 +1,13 @@
 package com.meni.whitelistfilter
 
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
+import androidx.core.content.ContextCompat
+import com.meni.whitelistfilter.install.InstallGuard
+import com.meni.whitelistfilter.install.InstallReceiver
 import com.meni.whitelistfilter.net.AppPolicy
 import com.meni.whitelistfilter.net.LocalProxy
 import com.meni.whitelistfilter.net.TProxyService
@@ -36,6 +40,20 @@ class FilterVpnService : VpnService() {
 
     private var tun: ParcelFileDescriptor? = null
     private var proxy: LocalProxy? = null
+    private var installReceiver: InstallReceiver? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        // מעקב אחרי התקנות חדשות (חסימה לפי קטגוריות). השירות תמיד פעיל כשה-VPN נעול, ולכן גם המעקב
+        val receiver = InstallReceiver()
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_FULLY_REMOVED)
+            addDataScheme("package")
+        }
+        ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        installReceiver = receiver
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -44,6 +62,7 @@ class FilterVpnService : VpnService() {
             return START_NOT_STICKY
         }
         startFilter()
+        InstallGuard.sweep(this)
         return START_STICKY
     }
 
@@ -54,6 +73,13 @@ class FilterVpnService : VpnService() {
 
     override fun onDestroy() {
         stopFilter()
+        installReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (_: Exception) {
+            }
+        }
+        installReceiver = null
         super.onDestroy()
     }
 

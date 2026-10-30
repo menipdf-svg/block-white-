@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import com.meni.whitelistfilter.install.InstallGuard
 import com.meni.whitelistfilter.ui.Root
 
 class MainActivity : ComponentActivity() {
@@ -30,6 +31,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         Rules.init(this)
+        InstallGuard.sweep(this)
         setContent {
             MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {

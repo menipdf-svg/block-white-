@@ -18,6 +18,7 @@ enum class Lock(val title: String, val desc: String) {
     NO_SAFE_BOOT("חסימת מצב בטוח", "מונע הפעלה במצב בטוח שעוקף אפליקציות"),
     NO_FACTORY_RESET("חסימת איפוס יצרן", "אי אפשר לאפס את המכשיר מההגדרות"),
     NO_ADD_USER("חסימת משתמשים נוספים", "אי אפשר ליצור משתמש חדש בלי סינון"),
+    NO_UNKNOWN_SOURCES("חסימת התקנה ממקורות לא ידועים", "אפשר להתקין רק דרך חנות האפליקציות (Google Play)"),
     NO_DEBUGGING("חסימת אפשרויות מפתח", "חוסם ADB. שים לב: גם אתה לא תוכל להשתמש ב-ADB")
 }
 
@@ -33,6 +34,7 @@ object Protection {
         Lock.NO_SAFE_BOOT -> UserManager.DISALLOW_SAFE_BOOT
         Lock.NO_FACTORY_RESET -> UserManager.DISALLOW_FACTORY_RESET
         Lock.NO_ADD_USER -> UserManager.DISALLOW_ADD_USER
+        Lock.NO_UNKNOWN_SOURCES -> UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY
         Lock.NO_DEBUGGING -> UserManager.DISALLOW_DEBUGGING_FEATURES
         else -> null
     }
