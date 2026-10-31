@@ -54,7 +54,7 @@ private fun SettingsHub(go: (SettingsPage) -> Unit) {
     PageList {
         item { SectionTitle("הגנה") }
         item {
-            NavRow("🛡️", "הגנה מפני עקיפה", "Device Owner, אפשרויות מפתח ונעילות מערכת") {
+            NavRow("🛡️", "הגנה מפני עקיפה", "Device Owner, נעילת גרסה, אפשרויות מפתח ונעילות מערכת") {
                 go(SettingsPage.PROTECTION)
             }
         }
@@ -95,13 +95,41 @@ fun ProtectionScreen(onStart: () -> Unit) {
     val running by FilterState.running.collectAsState()
     var refresh by remember { mutableIntStateOf(0) }
     val owner = remember(refresh) { Protection.isOwner(ctx) }
-    val locks = Lock.entries.filter { it != Lock.NO_DEBUGGING }
+    // חסימת המקורות הלא ידועים והניפוי באגים מנוהלים דרך "נעילת גרסה" ו"אפשרויות מפתח"
+    val locks = Lock.entries.filter { it != Lock.NO_DEBUGGING && it != Lock.NO_UNKNOWN_SOURCES }
 
     PageList {
         if (!owner) {
             item { OwnerSetupCard { refresh++ } }
         } else {
             item { Text("✅ האפליקציה מוגדרת כ-Device Owner", style = MaterialTheme.typography.bodyMedium) }
+        }
+
+        item { SectionTitle("נעילת גרסה") }
+        item {
+            var locked by remember(refresh) {
+                mutableStateOf(
+                    Protection.isOn(ctx, Lock.NO_UNKNOWN_SOURCES) && Protection.isOn(ctx, Lock.NO_DEBUGGING)
+                )
+            }
+            GroupCard {
+                SwitchRow(
+                    "חסום עדכון של האפליקציה",
+                    "אי אפשר להתקין גרסה חדשה מעל האפליקציה הזו, לא מקובץ APK ולא דרך ADB.",
+                    locked,
+                    enabled = owner
+                ) {
+                    Protection.set(ctx, Lock.NO_UNKNOWN_SOURCES, it)
+                    Protection.set(ctx, Lock.NO_DEBUGGING, it)
+                    locked = Protection.isOn(ctx, Lock.NO_UNKNOWN_SOURCES) && Protection.isOn(ctx, Lock.NO_DEBUGGING)
+                    refresh++
+                }
+                InfoText(
+                    "המתג מפעיל שתי נעילות יחד: חסימת התקנה ממקורות לא ידועים, וחסימת אפשרויות מפתח (ADB). " +
+                        "כדי לעדכן בעצמך: מכבים את המתג, מתקינים את הגרסה החדשה, ומפעילים שוב. " +
+                        "את אפשרויות המפתח וניפוי הבאגים תצטרך להפעיל מחדש בהגדרות הטלפון כדי להשתמש ב-ADB."
+                )
+            }
         }
 
         item { SectionTitle("אפשרויות מפתח") }
