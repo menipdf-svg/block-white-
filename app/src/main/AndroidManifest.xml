@@ -8,6 +8,8 @@
         tools:ignore="QueryAllPackagesPermission" />
     <!-- הסרה שקטה של אפליקציות בקטגוריה חסומה (Device Owner) -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- שליפת מזהה חשבון גוגל להגנת איפוס יצרן (FRP). ההרשאה ניתנת אוטומטית על ידי Device Owner -->
+    <uses-permission android:name="android.permission.GET_ACCOUNTS" />
 
     <application
         android:allowBackup="false"

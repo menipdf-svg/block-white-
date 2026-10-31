@@ -172,6 +172,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // שליפת מזהה חשבון גוגל (GoogleAuthUtil.getAccountId) להגנת איפוס יצרן
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
     // מודל AI מקומי לזיהוי תוכן בתמונות
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
     // הרצת NudeNet (מודל ONNX)

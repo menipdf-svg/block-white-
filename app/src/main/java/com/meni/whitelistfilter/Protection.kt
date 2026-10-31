@@ -276,6 +276,55 @@ object Protection {
         suspend(ctx, vpnApps(ctx) - protectedPackages(ctx), true)
     }
 
+    // ---------- הגנת איפוס יצרן (FRP) ----------
+
+    /** המייל שנבחר להגנה (להצגה בלבד) */
+    fun frpEmail(ctx: Context): String? = securityPrefs(ctx).getString("frp_email", null)
+
+    fun isFrpOn(ctx: Context): Boolean {
+        if (!isOwner(ctx) || Build.VERSION.SDK_INT < 30) return false
+        return try {
+            val p = dpm(ctx).getFactoryResetProtectionPolicy(admin(ctx))
+            p != null && p.isFactoryResetProtectionEnabled && p.factoryResetProtectionAccounts.isNotEmpty()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** נותן לעצמו את ההרשאה לקרוא חשבונות (Device Owner יכול לתת הרשאות לעצמו) */
+    fun grantAccountsPermission(ctx: Context) {
+        try {
+            dpm(ctx).setPermissionGrantState(
+                admin(ctx), ctx.packageName, android.Manifest.permission.GET_ACCOUNTS,
+                DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+            )
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * מפעיל FRP כך שרק החשבון עם המזהה הזה יפתח את המכשיר אחרי איפוס.
+     * accountId = null מבטל את המדיניות. השליפה של המזהה היא פעולת רשת, ולכן לא מה-thread הראשי.
+     */
+    fun setFrp(ctx: Context, accountId: String?, email: String?): Boolean {
+        if (!isOwner(ctx) || Build.VERSION.SDK_INT < 30) return false
+        return try {
+            val policy = accountId?.let {
+                android.app.admin.FactoryResetProtectionPolicy.Builder()
+                    .setFactoryResetProtectionAccounts(listOf(it))
+                    .setFactoryResetProtectionEnabled(true)
+                    .build()
+            }
+            dpm(ctx).setFactoryResetProtectionPolicy(admin(ctx), policy)
+            securityPrefs(ctx).edit().apply {
+                if (accountId != null) putString("frp_email", email) else remove("frp_email")
+            }.apply()
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     /** מסיר את כל הנעילות ואת הרשאת Device Owner */
     @Suppress("DEPRECATION")
     fun removeOwner(ctx: Context) {
@@ -283,6 +332,7 @@ object Protection {
         ChromeLock.entries.forEach { setChrome(ctx, it, false) }
         setForcedDns(ctx, null)
         setVpnBlocked(ctx, false)
+        setFrp(ctx, null, null)
         protectedPackages(ctx).forEach { setProtected(ctx, it, false) }
         try {
             dpm(ctx).clearDeviceOwnerApp(ctx.packageName)

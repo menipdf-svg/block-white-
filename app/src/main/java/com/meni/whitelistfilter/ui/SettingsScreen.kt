@@ -44,6 +44,50 @@ fun SettingsScreen(onBack: () -> Unit) {
     var host by rememberSaveable { mutableStateOf(Protection.forcedDnsHost(ctx) ?: "") }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    val frpOn = remember(refresh) { Protection.isFrpOn(ctx) }
+    var frpEmailInput by rememberSaveable { mutableStateOf(Protection.frpEmail(ctx) ?: "") }
+    var frpConfirm by remember { mutableStateOf(false) }
+
+    if (frpConfirm) {
+        AlertDialog(
+            onDismissRequest = { frpConfirm = false },
+            title = { Text("להפעיל הגנת איפוס יצרן?") },
+            text = {
+                Text(
+                    "אחרי איפוס יצרן רק החשבון $frpEmailInput יפתח את המכשיר. " +
+                        "ודא שאתה זוכר את הסיסמה שלו ושהכתובת נכונה. אחרת המכשיר יינעל לצמיתות אחרי איפוס."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    frpConfirm = false
+                    busy = true
+                    message = "שולף את מזהה החשבון..."
+                    val email = frpEmailInput
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            try {
+                                Protection.grantAccountsPermission(ctx)
+                                val id = com.google.android.gms.auth.GoogleAuthUtil.getAccountId(ctx, email)
+                                if (id.isNullOrBlank()) "ERR:NOID"
+                                else if (Protection.setFrp(ctx, id, email)) "OK" else "ERR:SET"
+                            } catch (_: Exception) {
+                                "ERR:EX"
+                            }
+                        }
+                        message = when (result) {
+                            "OK" -> "ה-FRP הופעל"
+                            "ERR:SET" -> "ההפעלה נכשלה (דורש Device Owner ואנדרואיד 11+)"
+                            else -> "לא הצלחתי לקבל מזהה. ודא שהחשבון מחובר עכשיו בטלפון ושיש אינטרנט"
+                        }
+                        busy = false
+                        refresh++
+                    }
+                }) { Text("הפעל") }
+            },
+            dismissButton = { TextButton(onClick = { frpConfirm = false }) { Text("ביטול") } }
+        )
+    }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -126,6 +170,52 @@ fun SettingsScreen(onBack: () -> Unit) {
                         refresh++
                     }
                 )
+            }
+        }
+
+        // ----- FRP -----
+        item { SectionTitle("הגנת איפוס יצרן (FRP)") }
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        if (frpOn) "✅ מוגן: אחרי איפוס רק ${Protection.frpEmail(ctx) ?: "החשבון שנבחר"} יפתח את המכשיר"
+                        else "אין הגנה",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        "אחרי איפוס יצרן (גם דרך Recovery) המכשיר יבקש התחברות עם חשבון גוגל מסוים בלבד. " +
+                            "החשבון צריך להיות מחובר עכשיו בטלפון. אם תשכח את הסיסמה שלו, לא תוכל לפתוח את המכשיר אחרי איפוס.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value = frpEmailInput,
+                        onValueChange = { frpEmailInput = it.trim() },
+                        singleLine = true,
+                        label = { Text("כתובת חשבון גוגל") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            enabled = owner && !busy && frpEmailInput.contains("@"),
+                            onClick = { frpConfirm = true }
+                        ) { Text("הפעל FRP") }
+                        if (frpOn) {
+                            OutlinedButton(
+                                enabled = owner && !busy,
+                                onClick = {
+                                    Protection.setFrp(ctx, null, null)
+                                    message = "ה-FRP בוטל"
+                                    refresh++
+                                }
+                            ) { Text("בטל FRP") }
+                        }
+                    }
+                    if (android.os.Build.VERSION.SDK_INT < 30) {
+                        Text("דורש אנדרואיד 11 ומעלה", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             }
         }
 
