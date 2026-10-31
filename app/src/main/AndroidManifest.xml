@@ -28,6 +28,15 @@
             </intent-filter>
         </activity>
 
+        <!-- Shizuku: מאפשר לאפליקציה לבקש הרשאה מהשירות -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
         <!-- הגדרת Device Owner דרך קוד QR בהפעלה ראשונה (אנדרואיד 10+) -->
         <activity
             android:name=".provision.GetProvisioningModeActivity"

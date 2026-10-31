@@ -160,6 +160,8 @@ internal fun OwnerSetupCard(onRefresh: () -> Unit) {
             TextButton(onClick = onRefresh) { Text("בדוק שוב") }
         }
         Text("4. מחזירים את החשבונות.", style = MaterialTheme.typography.bodyMedium)
+        RowDivider()
+        ShizukuSection(onDone = onRefresh)
     }
 }
 

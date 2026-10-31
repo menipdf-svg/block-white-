@@ -174,6 +174,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // שליפת מזהה חשבון גוגל (GoogleAuthUtil.getAccountId) להגנת איפוס יצרן
     implementation("com.google.android.gms:play-services-auth:21.2.0")
+    // Shizuku: מאפשר להריץ dpm set-device-owner מתוך הטלפון בלי מחשב
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
     // מודל AI מקומי לזיהוי תוכן בתמונות
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
     // הרצת NudeNet (מודל ONNX)
