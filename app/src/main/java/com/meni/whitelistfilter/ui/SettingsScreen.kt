@@ -8,10 +8,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Lock as LockIcon
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -64,7 +64,7 @@ private fun SettingsHub(go: (SettingsPage) -> Unit) {
                 go(SettingsPage.PROTECTION)
             }
             RowDivider()
-            NavRow(LockIcon, "קוד נעילה", "קוד שנדרש כדי לפתוח את האפליקציה") { go(SettingsPage.PIN) }
+            NavRow(Icons.Filled.Lock, "קוד נעילה", "קוד שנדרש כדי לפתוח את האפליקציה") { go(SettingsPage.PIN) }
             RowDivider()
             NavRow(Icons.Filled.Refresh, "הגנת איפוס יצרן", "אחרי איפוס רק חשבון גוגל מסוים יפתח את המכשיר") {
                 go(SettingsPage.FRP)
@@ -84,7 +84,7 @@ private fun SettingsHub(go: (SettingsPage) -> Unit) {
             RowDivider()
             NavRow(Icons.Filled.Search, "כרום", "Safe Browsing וחיפוש בטוח מחייבים") { go(SettingsPage.CHROME) }
             RowDivider()
-            NavRow(Icons.Filled.Visibility, "סינון תמונות", "טשטוש תמונות בפיירפוקס המסונן") { go(SettingsPage.IMAGES) }
+            NavRow(Icons.Filled.Info, "סינון תמונות", "טשטוש תמונות בפיירפוקס המסונן") { go(SettingsPage.IMAGES) }
         }
     }
 }
