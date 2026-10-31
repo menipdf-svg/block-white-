@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import com.meni.whitelistfilter.install.InstallGuard
+import com.meni.whitelistfilter.ui.AppTheme
 import com.meni.whitelistfilter.ui.Root
 
 class MainActivity : ComponentActivity() {
@@ -33,7 +34,7 @@ class MainActivity : ComponentActivity() {
         Rules.init(this)
         InstallGuard.sweep(this)
         setContent {
-            MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+            AppTheme {
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     Surface(Modifier.fillMaxSize()) {
                         Root(onStart = ::requestStart, onStop = ::stopVpn)
