@@ -65,7 +65,11 @@ object InstallGuard {
     fun onPackageAdded(ctx: Context, pkg: String, replacing: Boolean) {
         if (replacing) return // עדכון של אפליקציה קיימת
         val app = ctx.applicationContext
-        executor.execute { process(app, pkg, 0) }
+        executor.execute {
+            // חסימת VPN פועלת בנפרד מחסימת הקטגוריות
+            if (Protection.vpnBlocked(app) && Protection.isVpnApp(app, pkg)) Protection.enforceVpnBlock(app)
+            process(app, pkg, 0)
+        }
     }
 
     fun onPackageRemoved(ctx: Context, pkg: String) {
@@ -81,6 +85,7 @@ object InstallGuard {
     fun sweep(ctx: Context) {
         val app = ctx.applicationContext
         executor.execute {
+            Protection.enforceVpnBlock(app)
             if (!InstallSettings.enabled(app) || !Protection.isOwner(app)) return@execute
             val pm = app.packageManager
             val since = InstallSettings.enabledAt(app)

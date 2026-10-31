@@ -4,6 +4,8 @@ import android.app.admin.DeviceAdminReceiver
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.UserManager
@@ -214,12 +216,73 @@ object Protection {
         }
     }
 
+    // ---------- חסימת שימוש ב-VPN של אפליקציות אחרות ----------
+
+    fun vpnBlocked(ctx: Context): Boolean = securityPrefs(ctx).getBoolean("vpn_blocked", false)
+
+    /** אפליקציות (לא מערכת, לא אנחנו) שמצהירות על שירות VPN */
+    @Suppress("DEPRECATION")
+    fun vpnApps(ctx: Context): Set<String> {
+        val pm = ctx.packageManager
+        val found = try {
+            pm.queryIntentServices(android.content.Intent("android.net.VpnService"), PackageManager.MATCH_ALL)
+        } catch (_: Exception) {
+            emptyList()
+        }
+        return found.mapNotNull { it.serviceInfo?.applicationInfo }
+            .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 }
+            .map { it.packageName }
+            .filter { it != ctx.packageName }
+            .toSet()
+    }
+
+    fun isVpnApp(ctx: Context, pkg: String) = pkg in vpnApps(ctx)
+
+    private fun suspend(ctx: Context, pkgs: Collection<String>, on: Boolean) {
+        if (pkgs.isEmpty()) return
+        try {
+            dpm(ctx).setPackagesSuspended(admin(ctx), pkgs.toTypedArray(), on)
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * חסימה: אי אפשר להגדיר VPN במערכת, וכל אפליקציית VPN מותקנת מוקפאת (ולכן גם נעצרת).
+     * אפליקציות VPN שיותקנו אחר כך מוקפאות אוטומטית על ידי InstallGuard.
+     */
+    fun setVpnBlocked(ctx: Context, on: Boolean): Boolean {
+        if (!isOwner(ctx)) return false
+        return try {
+            val d = dpm(ctx)
+            val a = admin(ctx)
+            securityPrefs(ctx).edit().putBoolean("vpn_blocked", on).apply()
+            if (on) {
+                d.addUserRestriction(a, UserManager.DISALLOW_CONFIG_VPN)
+                suspend(ctx, vpnApps(ctx) - protectedPackages(ctx), true)
+            } else {
+                // מחזירים רק אם נעילת "הגדרות VPN" הרגילה כבויה
+                if (!isOn(ctx, Lock.NO_VPN_CONFIG)) d.clearUserRestriction(a, UserManager.DISALLOW_CONFIG_VPN)
+                suspend(ctx, vpnApps(ctx), false)
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** מקפיא אפליקציות VPN שהותקנו כשהחסימה פעילה. נקרא בהתקנה ובעליית השירות */
+    fun enforceVpnBlock(ctx: Context) {
+        if (!isOwner(ctx) || !vpnBlocked(ctx)) return
+        suspend(ctx, vpnApps(ctx) - protectedPackages(ctx), true)
+    }
+
     /** מסיר את כל הנעילות ואת הרשאת Device Owner */
     @Suppress("DEPRECATION")
     fun removeOwner(ctx: Context) {
         Lock.entries.forEach { set(ctx, it, false) }
         ChromeLock.entries.forEach { setChrome(ctx, it, false) }
         setForcedDns(ctx, null)
+        setVpnBlocked(ctx, false)
         protectedPackages(ctx).forEach { setProtected(ctx, it, false) }
         try {
             dpm(ctx).clearDeviceOwnerApp(ctx.packageName)

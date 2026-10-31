@@ -103,6 +103,32 @@ fun SettingsScreen(onBack: () -> Unit) {
             )
         }
 
+        // ----- VPN -----
+        item { SectionTitle("VPN") }
+        item {
+            var vpnOn by remember(refresh) { mutableStateOf(Protection.vpnBlocked(ctx)) }
+            val count = remember(refresh) { Protection.vpnApps(ctx).size }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("חסום שימוש ב-VPN", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "אי אפשר להגדיר VPN במערכת, ואפליקציות VPN אחרות מוקפאות ולא יכולות לעבוד " +
+                            "(גם כאלה שיותקנו בעתיד). הסינון של האפליקציה הזו לא נפגע. כרגע מותקנות: $count",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Switch(
+                    checked = vpnOn,
+                    enabled = owner,
+                    onCheckedChange = {
+                        Protection.setVpnBlocked(ctx, it)
+                        vpnOn = Protection.vpnBlocked(ctx)
+                        refresh++
+                    }
+                )
+            }
+        }
+
         // ----- DNS -----
         item { SectionTitle("כפיית DNS") }
         item {
