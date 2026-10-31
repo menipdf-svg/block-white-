@@ -28,6 +28,29 @@
             </intent-filter>
         </activity>
 
+        <!-- הגדרת Device Owner דרך קוד QR בהפעלה ראשונה (אנדרואיד 10+) -->
+        <activity
+            android:name=".provision.GetProvisioningModeActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.app.action.GET_PROVISIONING_MODE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".provision.PolicyComplianceActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.app.action.ADMIN_POLICY_COMPLIANCE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <!-- בדיקת תמונות לפיירפוקס המסונן (בודק מי מתחבר — רק org.mozilla.fenix...) -->
         <service
             android:name=".image.ImageCheckService"
