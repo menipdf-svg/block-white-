@@ -2,29 +2,31 @@
 
 package com.meni.whitelistfilter.ui
 
-import android.content.Intent
 import android.widget.Toast
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.meni.whitelistfilter.FilterState
 import com.meni.whitelistfilter.debug.LogSync
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.meni.whitelistfilter.image.ImageCache
 import com.meni.whitelistfilter.image.ImageCategory
 import com.meni.whitelistfilter.image.ImageFilterSettings
 import com.meni.whitelistfilter.image.ImageJudge
 import com.meni.whitelistfilter.image.Sensitivity
 import com.meni.whitelistfilter.image.WomenLevel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ImagesScreen() {
@@ -64,162 +66,125 @@ fun ImagesScreen() {
     }
 
     LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            start = Spacing.l, top = Spacing.s, end = Spacing.l, bottom = Spacing.xxl
+        ),
+        verticalArrangement = Arrangement.spacedBy(Spacing.s)
     ) {
         item {
-            Text(
+            InfoText(
                 "בפיירפוקס המסונן כל תמונה נבדקת במודל AI שרץ על המכשיר עצמו, ומה שבחרת מוחלף במשטח אפור לפני שהוא מוצג. שום תמונה לא נשלחת לשרת.",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(top = 12.dp)
+                Modifier.padding(bottom = Spacing.s)
             )
         }
 
+        // ----- מצב הסינון והפעולות -----
+        inset {
+            SwitchRow(
+                title = if (cfg.enabled) "סינון תמונות פעיל" else "סינון תמונות כבוי",
+                desc = if (checked > 0) "נבדקו $checked תמונות, טושטשו $blurred" else null,
+                checked = cfg.enabled
+            ) { on -> ImageFilterSettings.update { it.copy(enabled = on) } }
+            Column(
+                Modifier.padding(horizontal = Spacing.l, vertical = Spacing.s),
+                verticalArrangement = Arrangement.spacedBy(Spacing.s)
+            ) {
+                ImageJudge.error?.let { StatusMessage(it, Tone.BLOCKED) }
+                Button(
+                    onClick = {
+                        val launch = ctx.packageManager.getLaunchIntentForPackage("org.mozilla.fenix.debug")
+                            ?: ctx.packageManager.getLaunchIntentForPackage("org.mozilla.fenix")
+                        if (launch != null) ctx.startActivity(launch)
+                        else Toast.makeText(ctx, "פיירפוקס המסונן לא מותקן", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("פתח את פיירפוקס המסונן") }
+                OutlinedButton(
+                    onClick = {
+                        ImageCache.clear(ctx)
+                        Toast.makeText(ctx, "התמונות נמחקו מהמטמון", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("מחק תמונות מהמטמון") }
+            }
+        }
+
+        // ----- מה לטשטש: בחירה מרובה -----
+        inset(title = "מה לטשטש") {
+            ImageCategory.entries.forEachIndexed { i, cat ->
+                if (i > 0) RowDivider()
+                CheckRow(cat.title, null, checked = cat in cfg.categories) {
+                    ImageFilterSettings.toggleCategory(cat)
+                }
+            }
+        }
+
+        // ----- נשים: בחירה אחת -----
+        inset(
+            title = "נשים",
+            footer = "הזיהוי מבוסס על הפנים ועל הלבוש. כשלא רואים פנים (מהגב, מרחוק) הוא פחות מדויק."
+        ) {
+            WomenLevel.entries.forEachIndexed { i, level ->
+                if (i > 0) RowDivider()
+                ChoiceRow(level.title, level.desc, selected = cfg.women == level) {
+                    ImageFilterSettings.update { it.copy(women = level) }
+                }
+            }
+            if (cfg.women != WomenLevel.OFF && ImageCategory.PEOPLE in cfg.categories) {
+                RowDivider()
+                InfoText(
+                    "\"אנשים\" מסומן למעלה, אז כל התמונות של אנשים מטושטשות בכל מקרה — כולל נשים.",
+                    Modifier.padding(horizontal = Spacing.l, vertical = Spacing.s)
+                )
+            }
+        }
+
+        // ----- רגישות: בחירה אחת -----
+        inset(
+            title = "רגישות",
+            footer = "רגישות גבוהה מטשטשת גם כשהמודל פחות בטוח — יותר חסימות, וגם יותר טעויות."
+        ) {
+            Sensitivity.entries.forEachIndexed { i, s ->
+                if (i > 0) RowDivider()
+                ChoiceRow(s.title, null, selected = cfg.sensitivity == s) {
+                    ImageFilterSettings.update { it.copy(sensitivity = s) }
+                }
+            }
+        }
+
+        inset {
+            SwitchRow(
+                title = "טשטש תמונות שלא נבדקו",
+                desc = "פורמט לא נתמך או שגיאה בבדיקה — ליתר ביטחון התמונה מטושטשת",
+                checked = cfg.blockUnchecked
+            ) { on -> ImageFilterSettings.update { it.copy(blockUnchecked = on) } }
+        }
+
+        // ----- יומן תמונות -----
+        item { SectionTitle("יומן תמונות") }
         item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            if (cfg.enabled) "✅ סינון תמונות פעיל" else "⛔ סינון תמונות כבוי",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Switch(checked = cfg.enabled, onCheckedChange = { on -> ImageFilterSettings.update { it.copy(enabled = on) } })
-                    }
-                    if (checked > 0) {
-                        Text("נבדקו $checked תמונות, טושטשו $blurred", style = MaterialTheme.typography.bodySmall)
-                    }
-                    ImageJudge.error?.let {
-                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Spacer(Modifier.height(12.dp))
+            InsetGroup {
+                ExpandableRow(
+                    title = "מה המודל החליט על כל תמונה",
+                    subtitle = "${imageLog.size} תמונות אחרונות. אם משהו נחסם או עבר בטעות — לחץ \"שלח ל-Claude\".",
+                    open = showLog,
+                    onToggle = { showLog = !showLog }
+                )
+                RowDivider()
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = Spacing.l, vertical = Spacing.s),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Button(
-                        onClick = {
-                            val launch = ctx.packageManager.getLaunchIntentForPackage("org.mozilla.fenix.debug")
-                                ?: ctx.packageManager.getLaunchIntentForPackage("org.mozilla.fenix")
-                            if (launch != null) ctx.startActivity(launch)
-                            else Toast.makeText(ctx, "פיירפוקס המסונן לא מותקן", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("🦊 פתח את פיירפוקס המסונן") }
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = {
-                            ImageCache.clear(ctx)
-                            Toast.makeText(ctx, "התמונות נמחקו מהמטמון", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("🗑️ מחק תמונות מהמטמון") }
-                }
-            }
-        }
-
-        item { SectionTitle("מה לטשטש") }
-        items(ImageCategory.entries.size) { i ->
-            val cat = ImageCategory.entries[i]
-            Card(Modifier.fillMaxWidth().clickable { ImageFilterSettings.toggleCategory(cat) }) {
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(cat.emoji, style = MaterialTheme.typography.titleLarge)
-                    Spacer(Modifier.width(12.dp))
-                    Text(cat.title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    Checkbox(checked = cat in cfg.categories, onCheckedChange = { ImageFilterSettings.toggleCategory(cat) })
-                }
-            }
-        }
-
-        item { SectionTitle("👩 נשים") }
-        item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(vertical = 8.dp)) {
-                    WomenLevel.entries.forEach { level ->
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .clickable { ImageFilterSettings.update { it.copy(women = level) } }
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = cfg.women == level,
-                                onClick = { ImageFilterSettings.update { it.copy(women = level) } }
-                            )
-                            Column(Modifier.weight(1f)) {
-                                Text(level.title, style = MaterialTheme.typography.bodyLarge)
-                                Text(level.desc, style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
+                        onClick = { sendLog() },
+                        enabled = !sending,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(if (sending) "שולח…" else "שלח את היומן ל-Claude")
                     }
-                    if (cfg.women != WomenLevel.OFF && ImageCategory.PEOPLE in cfg.categories) {
-                        Text(
-                            "\"אנשים\" מסומן למעלה, אז כל התמונות של אנשים מטושטשות בכל מקרה — כולל נשים.",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                        )
-                    }
-                    Text(
-                        "הזיהוי מבוסס על הפנים ועל הלבוש. כשלא רואים פנים (מהגב, מרחוק) הוא פחות מדויק.",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                    )
+                    TextButton(onClick = { askToken = true }) { Text("טוקן") }
                 }
-            }
-        }
-
-        item { SectionTitle("רגישות") }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Sensitivity.entries.forEach { s ->
-                    FilterChip(
-                        selected = cfg.sensitivity == s,
-                        onClick = { ImageFilterSettings.update { it.copy(sensitivity = s) } },
-                        label = { Text(s.title) }
-                    )
-                }
-            }
-            Text(
-                "רגישות גבוהה מטשטשת גם כשהמודל פחות בטוח — יותר חסימות, וגם יותר טעויות.",
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-
-        item {
-            Card(Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("טשטש תמונות שלא נבדקו", style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            "פורמט לא נתמך או שגיאה בבדיקה — ליתר ביטחון התמונה מטושטשת",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                    Switch(
-                        checked = cfg.blockUnchecked,
-                        onCheckedChange = { on -> ImageFilterSettings.update { it.copy(blockUnchecked = on) } }
-                    )
-                }
-            }
-        }
-
-        item { SectionTitle("📋 יומן תמונות") }
-        item {
-            Card(Modifier.fillMaxWidth().clickable { showLog = !showLog }) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("מה המודל החליט על כל תמונה", style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            "${imageLog.size} תמונות אחרונות. אם משהו נחסם או עבר בטעות — לחץ \"שלח ל-Claude\".",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                    Text(if (showLog) "▲" else "▼")
-                }
-            }
-        }
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = { sendLog() }, enabled = !sending, modifier = Modifier.weight(1f)) {
-                    Text(if (sending) "שולח…" else "📤 שלח את היומן ל-Claude")
-                }
-                TextButton(onClick = { askToken = true }) { Text("טוקן") }
             }
         }
         if (showLog) {
@@ -228,18 +193,26 @@ fun ImagesScreen() {
             }
             items(imageLog.size) { i ->
                 val e = imageLog[i]
-                Card(
-                    Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (e.blocked) MaterialTheme.colorScheme.errorContainer
-                        else MaterialTheme.colorScheme.surfaceVariant
-                    )
+                val tone = if (e.blocked) Tone.BLOCKED else Tone.ALLOWED
+                Surface(
+                    color = if (e.blocked) tone.container() else MaterialTheme.colorScheme.surfaceContainerLowest,
+                    contentColor = if (e.blocked) tone.onContainer() else MaterialTheme.colorScheme.onSurface,
+                    shape = Radius.row,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(Modifier.padding(10.dp)) {
-                        Text(
-                            (if (e.blocked) "⛔ נחסם: " else "✅ עבר: ") + e.reason,
-                            style = MaterialTheme.typography.labelLarge
-                        )
+                    Column(Modifier.padding(Spacing.m)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (e.blocked) Icons.Filled.Close else Icons.Filled.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(Spacing.xs))
+                            Text(
+                                (if (e.blocked) "נחסם: " else "עבר: ") + e.reason,
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
                         if (e.detail.isNotBlank()) {
                             Text(e.detail, style = MaterialTheme.typography.bodySmall)
                         }
@@ -254,10 +227,9 @@ fun ImagesScreen() {
         }
 
         item {
-            Text(
+            InfoText(
                 "חשוב: סינון התמונות עובד רק בפיירפוקס המסונן. את האתרים שמותרים בו קובעים בלשונית האפליקציות (org.mozilla.fenix.debug ← רשימה לבנה). כדי שלא יעקפו אותו, הגדר את כרום ושאר הדפדפנים כ\"חסום\".",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(vertical = 16.dp)
+                Modifier.padding(vertical = Spacing.l)
             )
         }
     }
@@ -273,17 +245,17 @@ private fun TokenDialog(onSave: (String) -> Unit, onDismiss: () -> Unit) {
         title = { Text("טוקן GitHub") },
         text = {
             Column {
-                Text(
-                    "כדי לשלוח את היומן צריך טוקן GitHub (Fine-grained) לריפו block-white- בלבד, עם הרשאת Issues: Read and write. הטוקן נשמר רק בטלפון.",
-                    style = MaterialTheme.typography.bodySmall
+                InfoText(
+                    "כדי לשלוח את היומן צריך טוקן GitHub (Fine-grained) לריפו block-white- בלבד, עם הרשאת Issues: Read and write. הטוקן נשמר רק בטלפון."
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Spacing.s))
                 OutlinedTextField(
                     value = token,
                     onValueChange = { token = it.trim() },
                     singleLine = true,
                     label = { Text("github_pat_…") },
-                    visualTransformation = PasswordVisualTransformation()
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         },

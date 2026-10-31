@@ -2,6 +2,7 @@
 
 package com.meni.whitelistfilter.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -9,41 +10,42 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 /*
- * רכיבי סינון לשימוש חוזר בכל מסכי הרשימות:
- * SearchField · FilterButton · ActiveFilterChips · ResultsHeader · EmptyState · FilterSheet · FilterGroup · AppCard
+ * רכיבי רשימה וסינון לשימוש חוזר בכל מסכי הרשימות:
+ * ListCard · SearchField · FilterButton · ActiveFilterChips · ResultsHeader · EmptyState · FilterSheet · FilterGroup
  */
 
-/** כרטיס מורם עם פינות מעוגלות וצל עדין. עם onClick הוא לחיץ */
+/**
+ * שורה ברשימה עצלה: משטח לבן-שקט עם פינות מעוגלות, בלי צל.
+ * הצל הוסר כי הוא כפל ויזואלי מיותר מול הרקע הטונלי. עם onClick השורה לחיצה
+ */
 @Composable
-fun AppCard(
-    modifier: Modifier = Modifier,
-    onClick: (() -> Unit)? = null,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    val colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
-    val elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
-    if (onClick != null) {
-        ElevatedCard(
-            onClick = onClick,
-            modifier = modifier.fillMaxWidth(),
-            colors = colors,
-            elevation = elevation,
-            content = content
-        )
-    } else {
-        ElevatedCard(modifier = modifier.fillMaxWidth(), colors = colors, elevation = elevation, content = content)
+fun ListCard(onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
+    val base = Modifier.fillMaxWidth()
+    val modifier = if (onClick != null) base.clip(Radius.row).clickable(onClick = onClick) else base
+    Card(
+        modifier = modifier,
+        shape = Radius.row,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(content = content)
     }
 }
 
-/** שדה חיפוש מעוגל עם כפתור ניקוי */
+/** שדה חיפוש מעוגל עם כפתור ניקוי. גבול השדה בניגודיות 3:1 לפחות (WCAG 1.4.11) */
 @Composable
 fun SearchField(
     value: String,
@@ -56,15 +58,19 @@ fun SearchField(
         onValueChange = onValueChange,
         singleLine = true,
         placeholder = { Text(placeholder) },
-        leadingIcon = { Text("🔍") },
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
         trailingIcon = {
-            if (value.isNotEmpty()) IconButton(onClick = { onValueChange("") }) { Text("✕") }
+            if (value.isNotEmpty()) {
+                IconButton(onClick = { onValueChange("") }) {
+                    Icon(Icons.Filled.Close, contentDescription = "נקה חיפוש")
+                }
+            }
         },
         shape = RoundedCornerShape(28.dp),
         colors = OutlinedTextFieldDefaults.colors(
             focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
             focusedBorderColor = MaterialTheme.colorScheme.primary
         ),
         modifier = modifier
@@ -75,7 +81,11 @@ fun SearchField(
 @Composable
 fun FilterButton(activeCount: Int, onClick: () -> Unit) {
     BadgedBox(badge = { if (activeCount > 0) Badge { Text("$activeCount") } }) {
-        FilledTonalButton(onClick = onClick, modifier = Modifier.height(56.dp)) { Text("סינון") }
+        FilledTonalButton(onClick = onClick, modifier = Modifier.height(56.dp)) {
+            Icon(AppIcons.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(Spacing.xs))
+            Text("סינון")
+        }
     }
 }
 
@@ -87,15 +97,15 @@ fun ActiveFilterChips(chips: List<ActiveChip>, modifier: Modifier = Modifier) {
     if (chips.isEmpty()) return
     LazyRow(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp)
+        horizontalArrangement = Arrangement.spacedBy(Spacing.s),
+        contentPadding = PaddingValues(horizontal = Spacing.l)
     ) {
         items(chips, key = { it.label }) { chip ->
             InputChip(
                 selected = true,
                 onClick = chip.onDismiss,
                 label = { Text(chip.label) },
-                trailingIcon = { Text("✕", style = MaterialTheme.typography.labelSmall) }
+                trailingIcon = { Icon(Icons.Filled.Close, contentDescription = "הסר ${chip.label}", modifier = Modifier.size(16.dp)) }
             )
         }
     }
@@ -113,7 +123,9 @@ fun ResultsHeader(
     extra: @Composable RowScope.() -> Unit = {}
 ) {
     Row(
-        modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        modifier
+            .fillMaxWidth()
+            .padding(start = Spacing.l, end = Spacing.s),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -127,10 +139,10 @@ fun ResultsHeader(
     }
 }
 
-/** מצב ריק: אייקון, כותרת, הסבר, ואפשרות לפעולה (למשל איפוס הסינון) */
+/** מצב ריק: אייקון בעיגול טונלי, כותרת, הסבר, ואפשרות לפעולה (למשל איפוס הסינון) */
 @Composable
 fun EmptyState(
-    icon: String,
+    icon: ImageVector,
     title: String,
     message: String,
     modifier: Modifier = Modifier,
@@ -138,16 +150,23 @@ fun EmptyState(
     onAction: (() -> Unit)? = null
 ) {
     Column(
-        modifier.fillMaxSize().padding(32.dp),
+        modifier.fillMaxSize().padding(Spacing.xxl),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(88.dp)) {
-            Box(contentAlignment = Alignment.Center) { Text(icon, style = MaterialTheme.typography.displaySmall) }
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(72.dp)) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
         }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(Spacing.l))
         Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(Spacing.s))
         Text(
             message,
             style = MaterialTheme.typography.bodyMedium,
@@ -155,7 +174,7 @@ fun EmptyState(
             textAlign = TextAlign.Center
         )
         if (actionLabel != null && onAction != null) {
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(Spacing.l))
             FilledTonalButton(onClick = onAction) { Text(actionLabel) }
         }
     }
@@ -174,9 +193,9 @@ fun FilterSheet(
         Column(
             Modifier.fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = Spacing.xl)
+                .padding(bottom = Spacing.xl),
+            verticalArrangement = Arrangement.spacedBy(Spacing.l)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
@@ -193,7 +212,7 @@ fun FilterSheet(
 /** קבוצה בתוך חלון הסינון: כותרת קטנה ותוכן */
 @Composable
 fun FilterGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
         Text(
             title,
             style = MaterialTheme.typography.labelLarge,

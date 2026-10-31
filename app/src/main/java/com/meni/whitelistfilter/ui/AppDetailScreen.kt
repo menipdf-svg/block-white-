@@ -2,15 +2,17 @@
 
 package com.meni.whitelistfilter.ui
 
-import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.meni.whitelistfilter.AppRule
 import com.meni.whitelistfilter.FilterState
@@ -73,37 +75,38 @@ fun AppDetailScreen(pkg: String, onBack: () -> Unit) {
     val fmt = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
 
     LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            start = Spacing.l, top = Spacing.s, end = Spacing.l, bottom = Spacing.xxl
+        ),
+        verticalArrangement = Arrangement.spacedBy(Spacing.s)
     ) {
         item {
-            Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.padding(top = Spacing.m, bottom = Spacing.s),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 AppIcon(pkg, 56.dp)
-                Spacer(Modifier.width(12.dp))
-                Column {
+                Spacer(Modifier.width(Spacing.m))
+                Column(Modifier.weight(1f)) {
                     Text(label, style = MaterialTheme.typography.headlineSmall)
-                    Text(pkg, style = MaterialTheme.typography.bodySmall)
+                    InfoText(pkg)
                 }
             }
         }
 
-        // ----- מצב הגישה -----
-        item { SectionTitle("גישה לאינטרנט") }
-        item {
-            Row(
-                Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Mode.entries.forEach { m ->
-                    FilterChip(
-                        selected = rule.mode == m,
-                        onClick = { Rules.setMode(pkg, m) },
-                        label = { Text(m.title) }
-                    )
-                }
+        // ----- מצב הגישה: בחירה אחת מתוך ארבע, עם הסבר לכל אחת -----
+        inset(title = "גישה לאינטרנט") {
+            Mode.entries.forEachIndexed { i, m ->
+                if (i > 0) RowDivider()
+                ChoiceRow(
+                    title = m.title,
+                    desc = modeDescription(m),
+                    selected = rule.mode == m,
+                    onClick = { Rules.setMode(pkg, m) }
+                )
             }
         }
-        item { Text(modeDescription(rule.mode), style = MaterialTheme.typography.bodyMedium) }
 
         // ----- הגנה מהסרה -----
         item { ProtectCard(pkg) }
@@ -112,18 +115,20 @@ fun AppDetailScreen(pkg: String, onBack: () -> Unit) {
         if (pkg == SPOTIFY_PACKAGE) {
             item {
                 val allOn = SPOTIFY_IMAGE_DOMAINS.all { it in rule.blocked }
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Spotify בלי תמונות", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "חוסם ל-Spotify את שרתי התמונות (עטיפות, תמונות אמנים, וידאו קנבס). המוזיקה ממשיכה לעבוד.",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        if (allOn) {
-                            Text("✅ פעיל", style = MaterialTheme.typography.bodyMedium)
-                        } else {
-                            Button(onClick = { Rules.addAppBlocked(pkg, SPOTIFY_IMAGE_DOMAINS) }) {
-                                Text("חסום תמונות של Spotify")
+                Column {
+                    SectionTitle("Spotify בלי תמונות")
+                    InsetGroup {
+                        Column(
+                            Modifier.padding(Spacing.l),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.s)
+                        ) {
+                            InfoText("חוסם ל-Spotify את שרתי התמונות (עטיפות, תמונות אמנים, וידאו קנבס). המוזיקה ממשיכה לעבוד.")
+                            if (allOn) {
+                                StatusMessage("פעיל", Tone.ALLOWED)
+                            } else {
+                                Button(onClick = { Rules.addAppBlocked(pkg, SPOTIFY_IMAGE_DOMAINS) }) {
+                                    Text("חסום תמונות של Spotify")
+                                }
                             }
                         }
                     }
@@ -133,8 +138,16 @@ fun AppDetailScreen(pkg: String, onBack: () -> Unit) {
 
         // ----- הדומיינים שהאפליקציה ביקשה -----
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) { SectionTitle("דומיינים שהאפליקציה מבקשת (${requests.size})") }
+            Row(
+                Modifier.fillMaxWidth().padding(start = Spacing.l, end = Spacing.s, top = Spacing.l, bottom = Spacing.s),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "דומיינים שהאפליקציה מבקשת (${requests.size})",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
                 if (requests.isNotEmpty()) {
                     TextButton(onClick = {
                         FilterState.clearRequests(pkg)
@@ -144,14 +157,14 @@ fun AppDetailScreen(pkg: String, onBack: () -> Unit) {
             }
         }
         item {
-            Text(
+            InfoText(
                 when {
                     !running -> "הסינון כבוי. הפעל אותו כדי לראות כאן את הבקשות."
                     requests.isEmpty() -> "פתח את האפליקציה והשתמש בה. כל דומיין שהיא מבקשת יופיע כאן מיד."
                     rule.mode != Mode.WHITELIST -> "כדי לאשר דומיינים אחד-אחד, בחר למעלה \"רשימה לבנה\"."
-                    else -> "⛔ חסום  ✅ מותר. \"אשר\" מאשר את הדומיין הזה בלבד, ו\"אשר הכל\" גם את כל תת-הדומיינים של הדומיין הראשי."
+                    else -> "חסום או מותר. \"אשר\" מאשר את הדומיין הזה בלבד, ו\"אשר הכל\" גם את כל תת-הדומיינים של הדומיין הראשי."
                 },
-                style = MaterialTheme.typography.bodySmall
+                Modifier.padding(horizontal = Spacing.l)
             )
         }
         items(sorted, key = { "r_${it.target}" }) { e ->
@@ -159,44 +172,63 @@ fun AppDetailScreen(pkg: String, onBack: () -> Unit) {
         }
 
         // ----- חסומים תמיד -----
-        item { SectionTitle("חסומים תמיד לאפליקציה הזו (${rule.blocked.size})") }
         item {
-            Text(
-                "נחסמים בכל מצב — גם ב\"פתוח\" וגם אם הם ברשימה הכללית.",
-                style = MaterialTheme.typography.bodySmall
-            )
+            Column {
+                SectionTitle("חסומים תמיד לאפליקציה הזו (${rule.blocked.size})")
+                InfoText(
+                    "נחסמים בכל מצב — גם ב\"פתוח\" וגם אם הם ברשימה הכללית.",
+                    Modifier.padding(start = Spacing.l, end = Spacing.l, bottom = Spacing.s)
+                )
+                GroupCard { DomainInput { Rules.addAppBlocked(pkg, listOf(it)) } }
+            }
         }
-        item { DomainInput { Rules.addAppBlocked(pkg, listOf(it)) } }
         items(rule.blocked.sorted(), key = { "b_$it" }) { d ->
-            DomainRow(d, "הסר") { Rules.removeAppBlocked(pkg, d) }
+            ListCard {
+                Box(Modifier.padding(horizontal = Spacing.s)) {
+                    DomainRow(d, "הסר") { Rules.removeAppBlocked(pkg, d) }
+                }
+            }
         }
 
         // ----- דומיינים שאושרו לאפליקציה -----
         if (rule.mode == Mode.WHITELIST) {
-            item { SectionTitle("מאושרים רק לאפליקציה הזו (${rule.domains.size})") }
             item {
-                Text(
-                    "בנוסף לרשימה הכללית. אפליקציות אחרות לא יקבלו את הדומיינים האלה.",
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Column {
+                    SectionTitle("מאושרים רק לאפליקציה הזו (${rule.domains.size})")
+                    InfoText(
+                        "בנוסף לרשימה הכללית. אפליקציות אחרות לא יקבלו את הדומיינים האלה.",
+                        Modifier.padding(start = Spacing.l, end = Spacing.l, bottom = Spacing.s)
+                    )
+                    GroupCard { DomainInput { Rules.addAppDomain(pkg, it) } }
+                }
             }
-            item { DomainInput { Rules.addAppDomain(pkg, it) } }
             items(rule.domains.sorted(), key = { "d_$it" }) { d ->
-                DomainRow(d, "הסר") { Rules.removeAppDomain(pkg, d) }
+                ListCard {
+                    Box(Modifier.padding(horizontal = Spacing.s)) {
+                        DomainRow(d, "הסר") { Rules.removeAppDomain(pkg, d) }
+                    }
+                }
             }
         }
-        item { Spacer(Modifier.height(24.dp)) }
     }
 }
 
+/** שורת בקשה: צורה (✓ / ✕) וטקסט ("מותר" / "חסום") מעבירים את המצב גם בלי צבע */
 @Composable
 private fun RequestRow(pkg: String, e: RequestEntry, status: Status, mode: Mode, time: String) {
     val blocked = status is Status.Blocked
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+    val tone = if (blocked) Tone.BLOCKED else Tone.ALLOWED
+    val stateLabel = if (blocked) "חסום" else "מותר"
+    ListCard {
+        Column(Modifier.padding(horizontal = Spacing.l, vertical = Spacing.m)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (blocked) "⛔" else "✅")
-                Spacer(Modifier.width(8.dp))
+                Icon(
+                    if (blocked) Icons.Filled.Close else Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = tone.solid(),
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(Spacing.s))
                 Column(Modifier.weight(1f)) {
                     Text(e.target, style = MaterialTheme.typography.bodyLarge)
                     val where = when (status) {
@@ -205,8 +237,9 @@ private fun RequestRow(pkg: String, e: RequestEntry, status: Status, mode: Mode,
                         else -> ""
                     }
                     Text(
-                        "${e.count} בקשות · $time$where",
-                        style = MaterialTheme.typography.bodySmall
+                        "$stateLabel · ${e.count} בקשות · $time$where",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -234,7 +267,7 @@ private fun RequestRow(pkg: String, e: RequestEntry, status: Status, mode: Mode,
                 }
             }
             if (!e.isDomain && blocked) {
-                Text("כתובת IP בלי שם — אי אפשר לאשר", style = MaterialTheme.typography.bodySmall)
+                InfoText("כתובת IP בלי שם — אי אפשר לאשר")
             }
         }
     }
@@ -243,31 +276,26 @@ private fun RequestRow(pkg: String, e: RequestEntry, status: Status, mode: Mode,
 /** הגנה מהסרה / עצירה / מחיקת נתונים לאפליקציה הזו (דורש Device Owner) */
 @Composable
 private fun ProtectCard(pkg: String) {
-    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val ctx = LocalContext.current
     val owner = remember { Protection.isOwner(ctx) }
     var on by remember(pkg) { mutableStateOf(Protection.isProtected(ctx, pkg)) }
     val guard = rememberPinGuard()
-    Card(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("מניעת הסרה ומחיקת נתונים", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    if (owner) "אי אפשר להסיר את האפליקציה, לעצור אותה או למחוק את הנתונים שלה"
-                    else "דורש Device Owner (הגדרות ← הגנה מפני עקיפה)",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-            Switch(
+    Column {
+        SectionTitle("הגנה")
+        InsetGroup {
+            SwitchRow(
+                title = "מניעת הסרה ומחיקת נתונים",
+                desc = if (owner) "אי אפשר להסיר את האפליקציה, לעצור אותה או למחוק את הנתונים שלה"
+                else "דורש Device Owner (הגדרות ← הגנה מפני עקיפה)",
                 checked = on,
-                enabled = owner,
-                onCheckedChange = { want ->
-                    val apply: () -> Unit = {
-                        Protection.setProtected(ctx, pkg, want)
-                        on = Protection.isProtected(ctx, pkg)
-                    }
-                    if (want) apply() else guard(apply)
+                enabled = owner
+            ) { want ->
+                val apply: () -> Unit = {
+                    Protection.setProtected(ctx, pkg, want)
+                    on = Protection.isProtected(ctx, pkg)
                 }
-            )
+                if (want) apply() else guard(apply)
+            }
         }
     }
 }
