@@ -95,6 +95,7 @@ fun ProtectionScreen(onStart: () -> Unit) {
     val running by FilterState.running.collectAsState()
     var refresh by remember { mutableIntStateOf(0) }
     val owner = remember(refresh) { Protection.isOwner(ctx) }
+    val guard = rememberPinGuard()
     // חסימת המקורות הלא ידועים והניפוי באגים מנוהלים דרך "נעילת גרסה" ו"אפשרויות מפתח"
     val locks = Lock.entries.filter { it != Lock.NO_DEBUGGING && it != Lock.NO_UNKNOWN_SOURCES }
 
@@ -103,6 +104,15 @@ fun ProtectionScreen(onStart: () -> Unit) {
             item { OwnerSetupCard { refresh++ } }
         } else {
             item { Text("✅ האפליקציה מוגדרת כ-Device Owner", style = MaterialTheme.typography.bodyMedium) }
+        }
+
+        if (!com.meni.whitelistfilter.Pin.isSet(ctx)) {
+            item {
+                GroupCard {
+                    Text("⚠️ לא הוגדר קוד נעילה", style = MaterialTheme.typography.titleSmall)
+                    InfoText("בלי קוד, כל מי שפותח את האפליקציה יכול לכבות כל נעילה. הקוד מוגדר בהגדרות ← קוד נעילה.")
+                }
+            }
         }
 
         item { SectionTitle("נעילת גרסה") }
@@ -118,11 +128,15 @@ fun ProtectionScreen(onStart: () -> Unit) {
                     "אי אפשר להתקין גרסה חדשה מעל האפליקציה הזו, לא מקובץ APK ולא דרך ADB.",
                     locked,
                     enabled = owner
-                ) {
-                    Protection.set(ctx, Lock.NO_UNKNOWN_SOURCES, it)
-                    Protection.set(ctx, Lock.NO_DEBUGGING, it)
-                    locked = Protection.isOn(ctx, Lock.NO_UNKNOWN_SOURCES) && Protection.isOn(ctx, Lock.NO_DEBUGGING)
-                    refresh++
+                ) { want ->
+                    val apply: () -> Unit = {
+                        Protection.set(ctx, Lock.NO_UNKNOWN_SOURCES, want)
+                        Protection.set(ctx, Lock.NO_DEBUGGING, want)
+                        locked = Protection.isOn(ctx, Lock.NO_UNKNOWN_SOURCES) &&
+                            Protection.isOn(ctx, Lock.NO_DEBUGGING)
+                        refresh++
+                    }
+                    if (want) apply() else guard(apply)
                 }
                 InfoText(
                     "המתג מפעיל שתי נעילות יחד: חסימת התקנה ממקורות לא ידועים, וחסימת אפשרויות מפתח (ADB). " +
@@ -135,7 +149,7 @@ fun ProtectionScreen(onStart: () -> Unit) {
         item { SectionTitle("אפשרויות מפתח") }
         item {
             GroupCard {
-                LockSwitch(Lock.NO_DEBUGGING, owner, refresh, running, onStart) { refresh++ }
+                LockSwitch(Lock.NO_DEBUGGING, owner, refresh, running, onStart, guard) { refresh++ }
                 InfoText(
                     "מכבה מיד את ניפוי הבאגים ב-USB ואת אפשרויות המפתח, ולא נותן להפעיל אותם שוב. " +
                         "גם אתה לא תוכל להשתמש ב-ADB כשזה פעיל, אז כדאי להפעיל רק כשסיימת לפתח."
@@ -148,7 +162,7 @@ fun ProtectionScreen(onStart: () -> Unit) {
             GroupCard {
                 locks.forEachIndexed { i, lock ->
                     if (i > 0) HorizontalDivider()
-                    LockSwitch(lock, owner, refresh, running, onStart) { refresh++ }
+                    LockSwitch(lock, owner, refresh, running, onStart, guard) { refresh++ }
                 }
             }
         }
@@ -167,15 +181,20 @@ private fun LockSwitch(
     refresh: Int,
     running: Boolean,
     onStart: () -> Unit,
+    guard: (() -> Unit) -> Unit,
     onChanged: () -> Unit
 ) {
     val ctx = LocalContext.current
     var on by remember(refresh) { mutableStateOf(Protection.isOn(ctx, lock)) }
-    SwitchRow(lock.title, lock.desc, on, enabled = owner) {
-        if (lock == Lock.ALWAYS_ON_VPN && it && !running) onStart()
-        Protection.set(ctx, lock, it)
-        on = Protection.isOn(ctx, lock)
-        onChanged()
+    SwitchRow(lock.title, lock.desc, on, enabled = owner) { want ->
+        val apply: () -> Unit = {
+            if (lock == Lock.ALWAYS_ON_VPN && want && !running) onStart()
+            Protection.set(ctx, lock, want)
+            on = Protection.isOn(ctx, lock)
+            onChanged()
+        }
+        // הפעלת נעילה היא תמיד חופשית; כיבוי דורש קוד
+        if (want) apply() else guard(apply)
     }
 }
 
@@ -194,6 +213,7 @@ fun ChromeScreen() {
     var refresh by remember { mutableIntStateOf(0) }
     val owner = remember(refresh) { Protection.isOwner(ctx) }
     val chromeInstalled = remember { Protection.isChromeInstalled(ctx) }
+    val guard = rememberPinGuard()
 
     PageList {
         if (!owner) item { OwnerNotice() }
@@ -205,10 +225,13 @@ fun ChromeScreen() {
                 ChromeLock.entries.forEachIndexed { i, lock ->
                     if (i > 0) HorizontalDivider()
                     var on by remember(refresh) { mutableStateOf(Protection.isChromeOn(ctx, lock)) }
-                    SwitchRow(lock.title, lock.desc, on, enabled = owner) {
-                        Protection.setChrome(ctx, lock, it)
-                        on = Protection.isChromeOn(ctx, lock)
-                        refresh++
+                    SwitchRow(lock.title, lock.desc, on, enabled = owner) { want ->
+                        val apply: () -> Unit = {
+                            Protection.setChrome(ctx, lock, want)
+                            on = Protection.isChromeOn(ctx, lock)
+                            refresh++
+                        }
+                        if (want) apply() else guard(apply)
                     }
                 }
                 InfoText("ההגדרות מתעדכנות בכרום תוך כמה שניות. אם כרום פתוח, כדאי לסגור ולפתוח אותו מחדש.")
@@ -239,6 +262,7 @@ fun NetworkScreen() {
     val owner = remember(refresh) { Protection.isOwner(ctx) }
     val forcedHost = remember(refresh) { Protection.forcedDnsHost(ctx) }
     var host by rememberSaveable { mutableStateOf(Protection.forcedDnsHost(ctx) ?: "") }
+    val guard = rememberPinGuard()
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -256,10 +280,13 @@ fun NetworkScreen() {
                         "(גם כאלה שיותקנו בעתיד). הסינון של האפליקציה הזו לא נפגע. כרגע מותקנות: $count",
                     vpnOn,
                     enabled = owner
-                ) {
-                    Protection.setVpnBlocked(ctx, it)
-                    vpnOn = Protection.vpnBlocked(ctx)
-                    refresh++
+                ) { want ->
+                    val apply: () -> Unit = {
+                        Protection.setVpnBlocked(ctx, want)
+                        vpnOn = Protection.vpnBlocked(ctx)
+                        refresh++
+                    }
+                    if (want) apply() else guard(apply)
                 }
             }
         }
@@ -316,9 +343,11 @@ fun NetworkScreen() {
                         OutlinedButton(
                             enabled = owner && !busy,
                             onClick = {
-                                Protection.setForcedDns(ctx, null)
-                                message = "הכפייה בוטלה"
-                                refresh++
+                                guard {
+                                    Protection.setForcedDns(ctx, null)
+                                    message = "הכפייה בוטלה"
+                                    refresh++
+                                }
                             }
                         ) { Text("בטל כפייה") }
                     }
@@ -340,6 +369,7 @@ fun FrpScreen() {
     val frpOn = remember(refresh) { Protection.isFrpOn(ctx) }
     var email by rememberSaveable { mutableStateOf(Protection.frpEmail(ctx) ?: "") }
     var confirm by remember { mutableStateOf(false) }
+    val guard = rememberPinGuard()
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -413,9 +443,11 @@ fun FrpScreen() {
                         OutlinedButton(
                             enabled = owner && !busy,
                             onClick = {
-                                Protection.setFrp(ctx, null, null)
-                                message = "ה-FRP בוטל"
-                                refresh++
+                                guard {
+                                    Protection.setFrp(ctx, null, null)
+                                    message = "ה-FRP בוטל"
+                                    refresh++
+                                }
                             }
                         ) { Text("בטל FRP") }
                     }

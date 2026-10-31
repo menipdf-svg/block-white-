@@ -118,6 +118,7 @@ private fun SelectionText(text: String) {
 @Composable
 internal fun PinCard() {
     val ctx = LocalContext.current
+    val guard = rememberPinGuard()
     var isSet by remember { mutableStateOf(Pin.isSet(ctx)) }
     var pin by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
@@ -138,18 +139,24 @@ internal fun PinCard() {
             Row {
                 Button(onClick = {
                     if (pin.length >= 4) {
-                        Pin.set(ctx, pin)
-                        isSet = true
-                        pin = ""
-                        message = "הקוד נשמר. אל תשכח אותו!"
+                        val newPin = pin
+                        // החלפת קוד קיים דורשת את הקוד הנוכחי
+                        guard {
+                            Pin.set(ctx, newPin)
+                            isSet = true
+                            pin = ""
+                            message = "הקוד נשמר. אל תשכח אותו!"
+                        }
                     } else message = "צריך לפחות 4 ספרות"
                 }) { Text(if (isSet) "החלף קוד" else "הגדר קוד") }
                 if (isSet) {
                     Spacer(Modifier.width(8.dp))
                     TextButton(onClick = {
-                        Pin.clear(ctx)
-                        isSet = false
-                        message = "הקוד הוסר"
+                        guard {
+                            Pin.clear(ctx)
+                            isSet = false
+                            message = "הקוד הוסר"
+                        }
                     }) { Text("הסר קוד") }
                 }
             }
@@ -162,6 +169,7 @@ internal fun PinCard() {
 internal fun RemoveOwnerCard(onDone: () -> Unit) {
     val ctx = LocalContext.current
     var confirm by remember { mutableStateOf(false) }
+    val guard = rememberPinGuard()
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("מסיר את כל הנעילות ואת הרשאת Device Owner. אחרי זה אפשר יהיה להסיר את האפליקציה.")
@@ -175,9 +183,11 @@ internal fun RemoveOwnerCard(onDone: () -> Unit) {
             text = { Text("כל הנעילות יוסרו. הסינון עצמו ימשיך לעבוד עד שתעצור אותו.") },
             confirmButton = {
                 TextButton(onClick = {
-                    Protection.removeOwner(ctx)
                     confirm = false
-                    onDone()
+                    guard {
+                        Protection.removeOwner(ctx)
+                        onDone()
+                    }
                 }) { Text("בטל הגנה") }
             },
             dismissButton = { TextButton(onClick = { confirm = false }) { Text("השאר") } }

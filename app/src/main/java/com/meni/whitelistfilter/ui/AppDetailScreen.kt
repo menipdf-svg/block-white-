@@ -246,6 +246,7 @@ private fun ProtectCard(pkg: String) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val owner = remember { Protection.isOwner(ctx) }
     var on by remember(pkg) { mutableStateOf(Protection.isProtected(ctx, pkg)) }
+    val guard = rememberPinGuard()
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -259,9 +260,12 @@ private fun ProtectCard(pkg: String) {
             Switch(
                 checked = on,
                 enabled = owner,
-                onCheckedChange = {
-                    Protection.setProtected(ctx, pkg, it)
-                    on = Protection.isProtected(ctx, pkg)
+                onCheckedChange = { want ->
+                    val apply: () -> Unit = {
+                        Protection.setProtected(ctx, pkg, want)
+                        on = Protection.isProtected(ctx, pkg)
+                    }
+                    if (want) apply() else guard(apply)
                 }
             )
         }

@@ -23,7 +23,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.meni.whitelistfilter.Mode
+import com.meni.whitelistfilter.Pin
 
 @Composable
 fun AppIcon(pkg: String?, size: Dp = 40.dp) {
@@ -105,6 +107,60 @@ fun GroupCard(content: @Composable ColumnScope.() -> Unit) {
 @Composable
 fun InfoText(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+/**
+ * מחזיר פונקציה שמריצה פעולה רגישה רק אחרי הקשת הקוד.
+ * אם לא הוגדר קוד — הפעולה רצה מיד. כך אי אפשר לבטל הגנה רק בגלל שהאפליקציה נשארה פתוחה.
+ */
+@Composable
+fun rememberPinGuard(): (() -> Unit) -> Unit {
+    val ctx = LocalContext.current
+    var pending by remember { mutableStateOf<(() -> Unit)?>(null) }
+    pending?.let { action ->
+        PinDialog(
+            onSuccess = {
+                pending = null
+                action()
+            },
+            onCancel = { pending = null }
+        )
+    }
+    return { action -> if (Pin.isSet(ctx)) pending = action else action() }
+}
+
+@Composable
+private fun PinDialog(onSuccess: () -> Unit, onCancel: () -> Unit) {
+    val ctx = LocalContext.current
+    var pin by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("הכנס קוד") },
+        text = {
+            Column {
+                InfoText("הפעולה הזו מחלישה את ההגנה, ולכן צריך את הקוד.")
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = {
+                        pin = it.filter(Char::isDigit).take(12)
+                        error = false
+                    },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    isError = error,
+                    label = { Text("קוד") }
+                )
+                if (error) Text("קוד שגוי", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { if (Pin.check(ctx, pin)) onSuccess() else error = true }) { Text("אשר") }
+        },
+        dismissButton = { TextButton(onClick = onCancel) { Text("ביטול") } }
+    )
 }
 
 /** שורה עם כותרת, הסבר ומתג */

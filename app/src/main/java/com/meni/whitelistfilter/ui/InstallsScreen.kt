@@ -25,6 +25,7 @@ import java.util.Locale
 @Composable
 fun InstallsScreen() {
     val ctx = LocalContext.current
+    val guard = rememberPinGuard()
     val version by InstallGuard.version.collectAsState()
     val events by InstallGuard.events.collectAsState()
 
@@ -62,10 +63,13 @@ fun InstallsScreen() {
                         Switch(
                             checked = enabled,
                             enabled = owner,
-                            onCheckedChange = {
-                                InstallSettings.setEnabled(ctx, it)
-                                if (it) InstallGuard.sweep(ctx)
-                                InstallGuard.bump()
+                            onCheckedChange = { want ->
+                                val apply: () -> Unit = {
+                                    InstallSettings.setEnabled(ctx, want)
+                                    if (want) InstallGuard.sweep(ctx)
+                                    InstallGuard.bump()
+                                }
+                                if (want) apply() else guard(apply)
                             }
                         )
                     }
@@ -91,9 +95,12 @@ fun InstallsScreen() {
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
-                Switch(checked = uninstall, onCheckedChange = {
-                    InstallSettings.setUninstall(ctx, it)
-                    InstallGuard.bump()
+                Switch(checked = uninstall, onCheckedChange = { want ->
+                    val apply: () -> Unit = {
+                        InstallSettings.setUninstall(ctx, want)
+                        InstallGuard.bump()
+                    }
+                    if (want) apply() else guard(apply)
                 })
             }
         }
@@ -123,9 +130,12 @@ fun InstallsScreen() {
                     Text("כל המשחקים", style = MaterialTheme.typography.bodyLarge)
                     Text("חוסם כל קטגוריית משחקים", style = MaterialTheme.typography.bodySmall)
                 }
-                Switch(checked = allGames, onCheckedChange = {
-                    InstallSettings.setBlocked(ctx, PlayCategories.ALL_GAMES, it)
-                    InstallGuard.bump()
+                Switch(checked = allGames, onCheckedChange = { want ->
+                    val apply: () -> Unit = {
+                        InstallSettings.setBlocked(ctx, PlayCategories.ALL_GAMES, want)
+                        InstallGuard.bump()
+                    }
+                    if (want) apply() else guard(apply)
                 })
             }
         }
@@ -179,15 +189,19 @@ private fun CollapseHeader(title: String, blockedCount: Int, open: Boolean, onTo
 private fun CategoryRow(category: PlayCategory, blocked: Set<String>, allGames: Boolean, version: Int) {
     val ctx = LocalContext.current
     val forcedByGames = allGames && PlayCategories.isGame(category.id)
+    val guard = rememberPinGuard()
     val checked = category.id in blocked || forcedByGames
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(category.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
         Switch(
             checked = checked,
             enabled = !forcedByGames,
-            onCheckedChange = {
-                InstallSettings.setBlocked(ctx, category.id, it)
-                InstallGuard.bump()
+            onCheckedChange = { want ->
+                val apply: () -> Unit = {
+                    InstallSettings.setBlocked(ctx, category.id, want)
+                    InstallGuard.bump()
+                }
+                if (want) apply() else guard(apply)
             }
         )
     }
@@ -196,6 +210,7 @@ private fun CategoryRow(category: PlayCategory, blocked: Set<String>, allGames: 
 @Composable
 private fun HeldRow(pkg: String, category: String) {
     val ctx = LocalContext.current
+    val guard = rememberPinGuard()
     val label = remember(pkg) {
         try {
             val pm = ctx.packageManager
@@ -213,7 +228,7 @@ private fun HeldRow(pkg: String, category: String) {
                 Text(PlayCategories.title(category), style = MaterialTheme.typography.bodySmall)
             }
         }
-        TextButton(onClick = { InstallGuard.allow(ctx, pkg) }) { Text("שחרר") }
+        TextButton(onClick = { guard { InstallGuard.allow(ctx, pkg) } }) { Text("שחרר") }
         TextButton(onClick = { InstallGuard.remove(ctx, pkg) }) { Text("הסר") }
     }
 }
