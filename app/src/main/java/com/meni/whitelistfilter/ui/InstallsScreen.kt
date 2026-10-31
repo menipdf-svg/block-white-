@@ -2,16 +2,22 @@
 
 package com.meni.whitelistfilter.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.meni.whitelistfilter.Protection
 import com.meni.whitelistfilter.install.InstallGuard
@@ -40,103 +46,104 @@ fun InstallsScreen() {
     var showGames by rememberSaveable { mutableStateOf(false) }
 
     LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            start = Spacing.l, top = Spacing.s, end = Spacing.l, bottom = Spacing.xxl
+        ),
+        verticalArrangement = Arrangement.spacedBy(Spacing.s)
     ) {
-        item { Spacer(Modifier.height(4.dp)) }
-
         if (!owner) item { OwnerNotice() }
 
         // ----- הפעלה -----
-        item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("חסימה לפי קטגוריות", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                "כל אפליקציה חדשה מוקפאת מיד, נבדקת בגוגל פליי, ומשוחררת רק אם הקטגוריה שלה מותרת. " +
-                                    "בלי אינטרנט היא נשארת מוקפאת.",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                        Switch(
-                            checked = enabled,
-                            enabled = owner,
-                            onCheckedChange = { want ->
-                                val apply: () -> Unit = {
-                                    InstallSettings.setEnabled(ctx, want)
-                                    if (want) InstallGuard.sweep(ctx)
-                                    InstallGuard.bump()
-                                }
-                                if (want) apply() else guard(apply)
-                            }
-                        )
-                    }
-                    if (enabled && pendingCount > 0) {
-                        Text("ממתינות לבדיקה: $pendingCount", style = MaterialTheme.typography.bodySmall)
-                    }
-                    Text(
-                        "הבדיקה רצה בתוך שירות ה-VPN, אז כדאי להפעיל גם \"VPN תמיד פעיל\" בלשונית סטטוס. " +
-                            "אפליקציות שכבר מותקנות לא נבדקות.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
+        inset(
+            title = "הפעלה",
+            footer = "הבדיקה רצה בתוך שירות ה-VPN, אז כדאי להפעיל גם \"VPN תמיד פעיל\" בלשונית סטטוס. " +
+                "אפליקציות שכבר מותקנות לא נבדקות."
+        ) {
+            SwitchRow(
+                title = "חסימה לפי קטגוריות",
+                desc = "כל אפליקציה חדשה מוקפאת מיד, נבדקת בגוגל פליי, ומשוחררת רק אם הקטגוריה שלה מותרת. " +
+                    "בלי אינטרנט היא נשארת מוקפאת.",
+                checked = enabled,
+                enabled = owner
+            ) { want ->
+                val apply: () -> Unit = {
+                    InstallSettings.setEnabled(ctx, want)
+                    if (want) InstallGuard.sweep(ctx)
+                    InstallGuard.bump()
+                }
+                if (want) apply() else guard(apply)
+            }
+            if (enabled && pendingCount > 0) {
+                RowDivider()
+                Column(Modifier.padding(horizontal = Spacing.l, vertical = Spacing.s)) {
+                    StatusMessage("ממתינות לבדיקה: $pendingCount", Tone.NEUTRAL)
                 }
             }
         }
 
-        item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("הסרה אוטומטית", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        if (uninstall) "אפליקציה בקטגוריה חסומה מוסרת מיד"
-                        else "אפליקציה בקטגוריה חסומה רק מוקפאת, ואפשר לשחרר אותה ידנית",
-                        style = MaterialTheme.typography.bodySmall
-                    )
+        inset {
+            SwitchRow(
+                title = "הסרה אוטומטית",
+                desc = if (uninstall) "אפליקציה בקטגוריה חסומה מוסרת מיד"
+                else "אפליקציה בקטגוריה חסומה רק מוקפאת, ואפשר לשחרר אותה ידנית",
+                checked = uninstall
+            ) { want ->
+                val apply: () -> Unit = {
+                    InstallSettings.setUninstall(ctx, want)
+                    InstallGuard.bump()
                 }
-                Switch(checked = uninstall, onCheckedChange = { want ->
-                    val apply: () -> Unit = {
-                        InstallSettings.setUninstall(ctx, want)
-                        InstallGuard.bump()
-                    }
-                    if (want) apply() else guard(apply)
-                })
+                if (want) apply() else guard(apply)
             }
         }
 
         // ----- אפליקציות מוקפאות -----
         if (held.isNotEmpty()) {
-            item { SectionTitle("אפליקציות מוקפאות") }
-            items(held.entries.toList(), key = { "held_" + it.key }) { (pkg, category) ->
-                HeldRow(pkg, category)
+            inset(title = "אפליקציות מוקפאות") {
+                held.entries.toList().forEachIndexed { i, entry ->
+                    if (i > 0) RowDivider()
+                    HeldRow(entry.key, entry.value)
+                }
             }
         }
 
         // ----- קטגוריות -----
-        item { SectionTitle("קטגוריות לחסימה") }
-        items(PlayCategories.special, key = { it.id }) { c -> CategoryRow(c, blocked, allGames, version) }
-
-        item {
-            CollapseHeader("קטגוריות אפליקציות", PlayCategories.apps.count { it.id in blocked }, showApps) {
-                showApps = !showApps
+        inset(title = "קטגוריות לחסימה") {
+            PlayCategories.special.forEachIndexed { i, c ->
+                if (i > 0) RowDivider()
+                CategoryRow(c, blocked, allGames, version)
             }
         }
-        if (showApps) items(PlayCategories.apps, key = { it.id }) { c -> CategoryRow(c, blocked, allGames, version) }
 
         item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("כל המשחקים", style = MaterialTheme.typography.bodyLarge)
-                    Text("חוסם כל קטגוריית משחקים", style = MaterialTheme.typography.bodySmall)
-                }
-                Switch(checked = allGames, onCheckedChange = { want ->
-                    val apply: () -> Unit = {
-                        InstallSettings.setBlocked(ctx, PlayCategories.ALL_GAMES, want)
-                        InstallGuard.bump()
+            CollapseHeader(
+                "קטגוריות אפליקציות",
+                PlayCategories.apps.count { it.id in blocked },
+                showApps
+            ) { showApps = !showApps }
+        }
+        item {
+            AnimatedVisibility(visible = showApps) {
+                InsetGroup {
+                    PlayCategories.apps.forEachIndexed { i, c ->
+                        if (i > 0) RowDivider()
+                        CategoryRow(c, blocked, allGames, version)
                     }
-                    if (want) apply() else guard(apply)
-                })
+                }
+            }
+        }
+
+        inset {
+            SwitchRow(
+                title = "כל המשחקים",
+                desc = "חוסם כל קטגוריית משחקים",
+                checked = allGames
+            ) { want ->
+                val apply: () -> Unit = {
+                    InstallSettings.setBlocked(ctx, PlayCategories.ALL_GAMES, want)
+                    InstallGuard.bump()
+                }
+                if (want) apply() else guard(apply)
             }
         }
         item {
@@ -146,42 +153,76 @@ fun InstallsScreen() {
                 showGames
             ) { showGames = !showGames }
         }
-        if (showGames) items(PlayCategories.games, key = { it.id }) { c -> CategoryRow(c, blocked, allGames, version) }
-
-        // ----- יומן -----
-        if (events.isNotEmpty()) {
-            item { SectionTitle("פעילות אחרונה") }
-            items(events, key = { "ev_" + it.pkg }) { e ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    AppIcon(e.pkg, 32.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(e.label, style = MaterialTheme.typography.bodyMedium)
-                        val cat = e.category?.let { " · " + PlayCategories.title(it) }.orEmpty()
-                        Text(
-                            e.state.title + cat + " · " + timeText(e.time),
-                            style = MaterialTheme.typography.bodySmall
-                        )
+        item {
+            AnimatedVisibility(visible = showGames) {
+                InsetGroup {
+                    PlayCategories.games.forEachIndexed { i, c ->
+                        if (i > 0) RowDivider()
+                        CategoryRow(c, blocked, allGames, version)
                     }
                 }
             }
         }
 
-        item { Spacer(Modifier.height(24.dp)) }
+        // ----- יומן -----
+        if (events.isNotEmpty()) {
+            inset(title = "פעילות אחרונה") {
+                events.forEachIndexed { i, e ->
+                    if (i > 0) RowDivider()
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = Spacing.l, vertical = Spacing.s),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AppIcon(e.pkg, 32.dp)
+                        Spacer(Modifier.width(Spacing.s))
+                        Column(Modifier.weight(1f)) {
+                            Text(e.label, style = MaterialTheme.typography.bodyMedium)
+                            val cat = e.category?.let { " · " + PlayCategories.title(it) }.orEmpty()
+                            InfoText(e.state.title + cat + " · " + timeText(e.time))
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
-/** כותרת שנפתחת ונסגרת, עם מספר הקטגוריות שחסומות בתוכה */
+/** שורה שנפתחת ונסגרת: החץ מסתובב עם המצב, והמצב נקרא גם למסך מקריא */
+@Composable
+internal fun ExpandableRow(title: String, subtitle: String, open: Boolean, onToggle: () -> Unit) {
+    val rotation by animateFloatAsState(targetValue = if (open) 180f else 0f, label = "chevron")
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .clickable(onClick = onToggle)
+            .semantics { stateDescription = if (open) "מורחב" else "מכווץ" }
+            .padding(horizontal = Spacing.l, vertical = Spacing.s),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            InfoText(subtitle)
+        }
+        Icon(
+            Icons.Filled.KeyboardArrowDown,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.rotate(rotation)
+        )
+    }
+}
+
+/** כותרת קבוצה שנפתחת ונסגרת, עם מספר הקטגוריות שחסומות בתוכה */
 @Composable
 private fun CollapseHeader(title: String, blockedCount: Int, open: Boolean, onToggle: () -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onToggle)) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.bodyLarge)
-                InfoText(if (blockedCount == 0) "אין חסימות" else "$blockedCount חסומות")
-            }
-            Text(if (open) "▲" else "▼")
-        }
+    InsetGroup {
+        ExpandableRow(
+            title = title,
+            subtitle = if (blockedCount == 0) "אין חסימות" else "$blockedCount חסומות",
+            open = open,
+            onToggle = onToggle
+        )
     }
 }
 
@@ -191,19 +232,17 @@ private fun CategoryRow(category: PlayCategory, blocked: Set<String>, allGames: 
     val forcedByGames = allGames && PlayCategories.isGame(category.id)
     val guard = rememberPinGuard()
     val checked = category.id in blocked || forcedByGames
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(category.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-        Switch(
-            checked = checked,
-            enabled = !forcedByGames,
-            onCheckedChange = { want ->
-                val apply: () -> Unit = {
-                    InstallSettings.setBlocked(ctx, category.id, want)
-                    InstallGuard.bump()
-                }
-                if (want) apply() else guard(apply)
-            }
-        )
+    SwitchRow(
+        title = category.title,
+        desc = if (forcedByGames) "נחסם לפי \"כל המשחקים\"" else null,
+        checked = checked,
+        enabled = !forcedByGames
+    ) { want ->
+        val apply: () -> Unit = {
+            InstallSettings.setBlocked(ctx, category.id, want)
+            InstallGuard.bump()
+        }
+        if (want) apply() else guard(apply)
     }
 }
 
@@ -219,13 +258,16 @@ private fun HeldRow(pkg: String, category: String) {
             pkg
         }
     }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = Spacing.l, end = Spacing.s, top = Spacing.s, bottom = Spacing.s),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         AppIcon(pkg, 32.dp)
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(Spacing.s))
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
             if (category.isNotEmpty()) {
-                Text(PlayCategories.title(category), style = MaterialTheme.typography.bodySmall)
+                InfoText(PlayCategories.title(category))
             }
         }
         TextButton(onClick = { guard { InstallGuard.allow(ctx, pkg) } }) { Text("שחרר") }

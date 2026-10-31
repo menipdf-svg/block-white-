@@ -51,7 +51,16 @@ fun AppsScreen(onOpen: (String) -> Unit) {
 
     val list = apps
     if (list == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        // מצב טעינה: מיד מוצג משהו, עם הסבר מה קורה
+        Column(
+            Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            CircularProgressIndicator()
+            Spacer(Modifier.height(Spacing.m))
+            InfoText("טוען את רשימת האפליקציות…")
+        }
     } else {
         val visible = remember(list, rules, filters) { applyFilters(list, rules, filters) }
         val hasFilters = filters.activeCount > 0
@@ -71,9 +80,9 @@ fun AppsScreen(onOpen: (String) -> Unit) {
 
         Column(Modifier.fillMaxSize()) {
             Row(
-                Modifier.padding(horizontal = 16.dp).padding(top = 12.dp),
+                Modifier.padding(horizontal = Spacing.l).padding(top = Spacing.m),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(Spacing.s)
             ) {
                 SearchField(
                     value = filters.query,
@@ -83,18 +92,19 @@ fun AppsScreen(onOpen: (String) -> Unit) {
                 )
                 FilterButton(chips.size) { showSheet = true }
             }
-            ActiveFilterChips(chips, Modifier.padding(top = 8.dp))
+            ActiveFilterChips(chips, Modifier.padding(top = Spacing.s))
             ResultsHeader(
                 shown = visible.size,
                 total = list.size,
                 unit = "אפליקציות",
                 hasFilters = hasFilters,
-                onReset = { filters = AppFilters() }
+                onReset = { filters = AppFilters() },
+                modifier = Modifier.padding(top = Spacing.s)
             )
 
             if (visible.isEmpty()) {
                 EmptyState(
-                    icon = "🔍",
+                    icon = AppIcons.Apps,
                     title = "לא נמצאו אפליקציות",
                     message = "נסה לשנות את החיפוש או את הסינון.",
                     actionLabel = if (hasFilters) "אפס סינון" else null,
@@ -103,18 +113,18 @@ fun AppsScreen(onOpen: (String) -> Unit) {
             } else {
                 LazyColumn(
                     Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    contentPadding = PaddingValues(horizontal = Spacing.l, vertical = Spacing.s),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.s)
                 ) {
                     items(visible, key = { it.pkg }) { app ->
                         val rule = rules.apps[app.pkg] ?: AppRule()
-                        AppCard(onClick = { onOpen(app.pkg) }) {
+                        ListCard(onClick = { onOpen(app.pkg) }) {
                             Row(
-                                Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                Modifier.padding(horizontal = Spacing.l, vertical = Spacing.m),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                AppIcon(app.pkg, 44.dp)
-                                Spacer(Modifier.width(14.dp))
+                                AppIcon(app.pkg, 40.dp)
+                                Spacer(Modifier.width(Spacing.m))
                                 Column(Modifier.weight(1f)) {
                                     Text(
                                         app.label,
@@ -130,7 +140,7 @@ fun AppsScreen(onOpen: (String) -> Unit) {
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                                Spacer(Modifier.width(8.dp))
+                                Spacer(Modifier.width(Spacing.s))
                                 ModeBadge(rule.mode, rule.domains.size)
                             }
                         }
@@ -147,7 +157,7 @@ fun AppsScreen(onOpen: (String) -> Unit) {
                 onDismiss = { showSheet = false }
             ) {
                 FilterGroup("מצב גישה לאינטרנט") {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
                         Mode.entries.forEach { m ->
                             FilterChip(
                                 selected = m in filters.modes,
@@ -162,7 +172,7 @@ fun AppsScreen(onOpen: (String) -> Unit) {
                     }
                 }
                 FilterGroup("מיון") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
                         AppSort.entries.forEach { s ->
                             FilterChip(
                                 selected = filters.sort == s,
@@ -172,11 +182,13 @@ fun AppsScreen(onOpen: (String) -> Unit) {
                         }
                     }
                 }
-                SwitchRow(
-                    "אפליקציות מערכת",
-                    "הצג גם אפליקציות מערכת שיש להן גישה לאינטרנט",
-                    filters.includeSystem
-                ) { filters = filters.copy(includeSystem = it) }
+                InsetGroup {
+                    SwitchRow(
+                        "אפליקציות מערכת",
+                        "הצג גם אפליקציות מערכת שיש להן גישה לאינטרנט",
+                        filters.includeSystem
+                    ) { filters = filters.copy(includeSystem = it) }
+                }
             }
         }
     }

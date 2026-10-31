@@ -6,6 +6,13 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Lock as LockIcon
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -52,37 +59,32 @@ fun SettingsRoot(page: SettingsPage, go: (SettingsPage) -> Unit, onStart: () -> 
 @Composable
 private fun SettingsHub(go: (SettingsPage) -> Unit) {
     PageList {
-        item { SectionTitle("הגנה") }
-        item {
-            NavRow("🛡️", "הגנה מפני עקיפה", "Device Owner, נעילת גרסה, אפשרויות מפתח ונעילות מערכת") {
+        inset(title = "הגנה") {
+            NavRow(AppIcons.Shield, "הגנה מפני עקיפה", "Device Owner, נעילת גרסה, אפשרויות מפתח ונעילות מערכת") {
                 go(SettingsPage.PROTECTION)
             }
-        }
-        item { NavRow("🔒", "קוד נעילה", "קוד שנדרש כדי לפתוח את האפליקציה") { go(SettingsPage.PIN) } }
-        item {
-            NavRow("🔑", "הגנת איפוס יצרן", "אחרי איפוס רק חשבון גוגל מסוים יפתח את המכשיר") {
+            RowDivider()
+            NavRow(LockIcon, "קוד נעילה", "קוד שנדרש כדי לפתוח את האפליקציה") { go(SettingsPage.PIN) }
+            RowDivider()
+            NavRow(Icons.Filled.Refresh, "הגנת איפוס יצרן", "אחרי איפוס רק חשבון גוגל מסוים יפתח את המכשיר") {
                 go(SettingsPage.FRP)
             }
         }
 
-        item { SectionTitle("אפליקציות והתקנות") }
-        item {
-            NavRow("📦", "חסימת התקנות", "חסימה לפי קטגוריות ב-Google Play, ודפדפנים") {
+        inset(title = "אפליקציות והתקנות") {
+            NavRow(AppIcons.Apps, "חסימת התקנות", "חסימה לפי קטגוריות ב-Google Play, ודפדפנים") {
                 go(SettingsPage.INSTALLS)
             }
         }
 
-        item { SectionTitle("אינטרנט") }
-        item {
-            NavRow("🌐", "VPN ו-DNS", "חסימת VPN של אפליקציות אחרות וכפיית שרת DNS") {
+        inset(title = "אינטרנט") {
+            NavRow(AppIcons.Globe, "VPN ו-DNS", "חסימת VPN של אפליקציות אחרות וכפיית שרת DNS") {
                 go(SettingsPage.NETWORK)
             }
-        }
-        item {
-            NavRow("🧭", "כרום", "Safe Browsing וחיפוש בטוח מחייבים") { go(SettingsPage.CHROME) }
-        }
-        item {
-            NavRow("🖼️", "סינון תמונות", "טשטוש תמונות בפיירפוקס המסונן") { go(SettingsPage.IMAGES) }
+            RowDivider()
+            NavRow(Icons.Filled.Search, "כרום", "Safe Browsing וחיפוש בטוח מחייבים") { go(SettingsPage.CHROME) }
+            RowDivider()
+            NavRow(Icons.Filled.Visibility, "סינון תמונות", "טשטוש תמונות בפיירפוקס המסונן") { go(SettingsPage.IMAGES) }
         }
     }
 }
@@ -103,73 +105,72 @@ fun ProtectionScreen(onStart: () -> Unit) {
         if (!owner) {
             item { OwnerSetupCard { refresh++ } }
         } else {
-            item { Text("✅ האפליקציה מוגדרת כ-Device Owner", style = MaterialTheme.typography.bodyMedium) }
+            item {
+                StatusBanner(Tone.ALLOWED, Icons.Filled.Check, "האפליקציה מוגדרת כ-Device Owner")
+            }
         }
 
         if (!com.meni.whitelistfilter.Pin.isSet(ctx)) {
             item {
-                GroupCard {
-                    Text("⚠️ לא הוגדר קוד נעילה", style = MaterialTheme.typography.titleSmall)
-                    InfoText("בלי קוד, כל מי שפותח את האפליקציה יכול לכבות כל נעילה. הקוד מוגדר בהגדרות ← קוד נעילה.")
-                }
+                StatusBanner(
+                    tone = Tone.CAUTION,
+                    icon = Icons.Filled.Warning,
+                    title = "לא הוגדר קוד נעילה",
+                    body = "בלי קוד, כל מי שפותח את האפליקציה יכול לכבות כל נעילה. הקוד מוגדר בהגדרות ← קוד נעילה."
+                )
             }
         }
 
-        item { SectionTitle("נעילת גרסה") }
-        item {
+        inset(
+            title = "נעילת גרסה",
+            footer = "המתג מפעיל שתי נעילות יחד: חסימת התקנה ממקורות לא ידועים, וחסימת אפשרויות מפתח (ADB). " +
+                "כדי לעדכן בעצמך: מכבים את המתג, מתקינים את הגרסה החדשה, ומפעילים שוב. " +
+                "את אפשרויות המפתח וניפוי הבאגים תצטרך להפעיל מחדש בהגדרות הטלפון כדי להשתמש ב-ADB."
+        ) {
             var locked by remember(refresh) {
                 mutableStateOf(
                     Protection.isOn(ctx, Lock.NO_UNKNOWN_SOURCES) && Protection.isOn(ctx, Lock.NO_DEBUGGING)
                 )
             }
-            GroupCard {
-                SwitchRow(
-                    "חסום עדכון של האפליקציה",
-                    "אי אפשר להתקין גרסה חדשה מעל האפליקציה הזו, לא מקובץ APK ולא דרך ADB.",
-                    locked,
-                    enabled = owner
-                ) { want ->
-                    val apply: () -> Unit = {
-                        Protection.set(ctx, Lock.NO_UNKNOWN_SOURCES, want)
-                        Protection.set(ctx, Lock.NO_DEBUGGING, want)
-                        locked = Protection.isOn(ctx, Lock.NO_UNKNOWN_SOURCES) &&
-                            Protection.isOn(ctx, Lock.NO_DEBUGGING)
-                        refresh++
-                    }
-                    if (want) apply() else guard(apply)
+            SwitchRow(
+                "חסום עדכון של האפליקציה",
+                "אי אפשר להתקין גרסה חדשה מעל האפליקציה הזו, לא מקובץ APK ולא דרך ADB.",
+                locked,
+                enabled = owner
+            ) { want ->
+                val apply: () -> Unit = {
+                    Protection.set(ctx, Lock.NO_UNKNOWN_SOURCES, want)
+                    Protection.set(ctx, Lock.NO_DEBUGGING, want)
+                    locked = Protection.isOn(ctx, Lock.NO_UNKNOWN_SOURCES) &&
+                        Protection.isOn(ctx, Lock.NO_DEBUGGING)
+                    refresh++
                 }
-                InfoText(
-                    "המתג מפעיל שתי נעילות יחד: חסימת התקנה ממקורות לא ידועים, וחסימת אפשרויות מפתח (ADB). " +
-                        "כדי לעדכן בעצמך: מכבים את המתג, מתקינים את הגרסה החדשה, ומפעילים שוב. " +
-                        "את אפשרויות המפתח וניפוי הבאגים תצטרך להפעיל מחדש בהגדרות הטלפון כדי להשתמש ב-ADB."
-                )
+                if (want) apply() else guard(apply)
             }
         }
 
-        item { SectionTitle("אפשרויות מפתח") }
-        item {
-            GroupCard {
-                LockSwitch(Lock.NO_DEBUGGING, owner, refresh, running, onStart, guard) { refresh++ }
-                InfoText(
-                    "מכבה מיד את ניפוי הבאגים ב-USB ואת אפשרויות המפתח, ולא נותן להפעיל אותם שוב. " +
-                        "גם אתה לא תוכל להשתמש ב-ADB כשזה פעיל, אז כדאי להפעיל רק כשסיימת לפתח."
-                )
-            }
+        inset(
+            title = "אפשרויות מפתח",
+            footer = "מכבה מיד את ניפוי הבאגים ב-USB ואת אפשרויות המפתח, ולא נותן להפעיל אותם שוב. " +
+                "גם אתה לא תוכל להשתמש ב-ADB כשזה פעיל, אז כדאי להפעיל רק כשסיימת לפתח."
+        ) {
+            LockSwitch(Lock.NO_DEBUGGING, owner, refresh, running, onStart, guard) { refresh++ }
         }
 
-        item { SectionTitle("נעילות מערכת") }
-        item {
-            GroupCard {
-                locks.forEachIndexed { i, lock ->
-                    if (i > 0) HorizontalDivider()
-                    LockSwitch(lock, owner, refresh, running, onStart, guard) { refresh++ }
-                }
+        inset(title = "נעילות מערכת") {
+            locks.forEachIndexed { i, lock ->
+                if (i > 0) RowDivider()
+                LockSwitch(lock, owner, refresh, running, onStart, guard) { refresh++ }
             }
         }
 
         if (owner) {
-            item { SectionTitle("ביטול ההגנה") }
-            item { RemoveOwnerCard { refresh++ } }
+            item {
+                Column {
+                    SectionTitle("ביטול ההגנה")
+                    RemoveOwnerCard { refresh++ }
+                }
+            }
         }
     }
 }
@@ -218,23 +219,20 @@ fun ChromeScreen() {
     PageList {
         if (!owner) item { OwnerNotice() }
         if (!chromeInstalled) {
-            item { InfoText("כרום לא מותקן כרגע. ההגדרות יישמרו ויחולו ברגע שהוא יותקן.") }
+            item { InfoText("כרום לא מותקן כרגע. ההגדרות יישמרו ויחולו ברגע שהוא יותקן.", Modifier.padding(horizontal = Spacing.l)) }
         }
-        item {
-            GroupCard {
-                ChromeLock.entries.forEachIndexed { i, lock ->
-                    if (i > 0) HorizontalDivider()
-                    var on by remember(refresh) { mutableStateOf(Protection.isChromeOn(ctx, lock)) }
-                    SwitchRow(lock.title, lock.desc, on, enabled = owner) { want ->
-                        val apply: () -> Unit = {
-                            Protection.setChrome(ctx, lock, want)
-                            on = Protection.isChromeOn(ctx, lock)
-                            refresh++
-                        }
-                        if (want) apply() else guard(apply)
+        inset(footer = "ההגדרות מתעדכנות בכרום תוך כמה שניות. אם כרום פתוח, כדאי לסגור ולפתוח אותו מחדש.") {
+            ChromeLock.entries.forEachIndexed { i, lock ->
+                if (i > 0) RowDivider()
+                var on by remember(refresh) { mutableStateOf(Protection.isChromeOn(ctx, lock)) }
+                SwitchRow(lock.title, lock.desc, on, enabled = owner) { want ->
+                    val apply: () -> Unit = {
+                        Protection.setChrome(ctx, lock, want)
+                        on = Protection.isChromeOn(ctx, lock)
+                        refresh++
                     }
+                    if (want) apply() else guard(apply)
                 }
-                InfoText("ההגדרות מתעדכנות בכרום תוך כמה שניות. אם כרום פתוח, כדאי לסגור ולפתוח אותו מחדש.")
             }
         }
     }
@@ -265,46 +263,44 @@ fun NetworkScreen() {
     val guard = rememberPinGuard()
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var messageTone by remember { mutableStateOf(Tone.NEUTRAL) }
 
     PageList {
         if (!owner) item { OwnerNotice() }
 
-        item { SectionTitle("VPN") }
-        item {
+        inset(title = "VPN") {
             var vpnOn by remember(refresh) { mutableStateOf(Protection.vpnBlocked(ctx)) }
             val count = remember(refresh) { Protection.vpnApps(ctx).size }
-            GroupCard {
-                SwitchRow(
-                    "חסום שימוש ב-VPN",
-                    "אי אפשר להגדיר VPN במערכת, ואפליקציות VPN אחרות מוקפאות ולא יכולות לעבוד " +
-                        "(גם כאלה שיותקנו בעתיד). הסינון של האפליקציה הזו לא נפגע. כרגע מותקנות: $count",
-                    vpnOn,
-                    enabled = owner
-                ) { want ->
-                    val apply: () -> Unit = {
-                        Protection.setVpnBlocked(ctx, want)
-                        vpnOn = Protection.vpnBlocked(ctx)
-                        refresh++
-                    }
-                    if (want) apply() else guard(apply)
+            SwitchRow(
+                "חסום שימוש ב-VPN",
+                "אי אפשר להגדיר VPN במערכת, ואפליקציות VPN אחרות מוקפאות ולא יכולות לעבוד " +
+                    "(גם כאלה שיותקנו בעתיד). הסינון של האפליקציה הזו לא נפגע. כרגע מותקנות: $count",
+                vpnOn,
+                enabled = owner
+            ) { want ->
+                val apply: () -> Unit = {
+                    Protection.setVpnBlocked(ctx, want)
+                    vpnOn = Protection.vpnBlocked(ctx)
+                    refresh++
                 }
+                if (want) apply() else guard(apply)
             }
         }
 
-        item { SectionTitle("כפיית DNS") }
-        item {
-            GroupCard {
-                Text(
-                    if (forcedHost != null) "✅ DNS נכפה: $forcedHost" else "אין כפיית DNS",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                InfoText(
-                    "הכפייה היא ב-DNS פרטי של אנדרואיד, לכן צריך שם שרת (למשל dns.google) ולא כתובת IP. " +
-                        "אם השרת לא נגיש, לא יהיה אינטרנט בכלל."
-                )
+        inset(
+            title = "כפיית DNS",
+            footer = "הכפייה היא ב-DNS פרטי של אנדרואיד, לכן צריך שם שרת (למשל dns.google) ולא כתובת IP. " +
+                "אם השרת לא נגיש, לא יהיה אינטרנט בכלל."
+        ) {
+            Column(Modifier.padding(Spacing.l), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                if (forcedHost != null) {
+                    StatusMessage("DNS נכפה: $forcedHost", Tone.ALLOWED)
+                } else {
+                    InfoText("אין כפיית DNS")
+                }
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.s)
                 ) {
                     dnsPresets.forEach { preset ->
                         AssistChip(onClick = { host = preset.host }, label = { Text(preset.title) })
@@ -319,20 +315,23 @@ fun NetworkScreen() {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     modifier = Modifier.fillMaxWidth()
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
                     Button(
                         enabled = owner && !busy,
                         onClick = {
                             if (!hostRegex.matches(host)) {
                                 message = "שם השרת לא תקין"
+                                messageTone = Tone.BLOCKED
                             } else {
                                 busy = true
                                 message = "בודק את השרת..."
+                                messageTone = Tone.NEUTRAL
                                 scope.launch {
                                     val ok = withContext(Dispatchers.IO) { Protection.setForcedDns(ctx, host) }
                                     message =
                                         if (ok) "ה-DNS נכפה"
                                         else "ההגדרה נכשלה. השרת לא נגיש או שאינו תומך ב-DNS פרטי"
+                                    messageTone = if (ok) Tone.ALLOWED else Tone.BLOCKED
                                     busy = false
                                     refresh++
                                 }
@@ -346,13 +345,14 @@ fun NetworkScreen() {
                                 guard {
                                     Protection.setForcedDns(ctx, null)
                                     message = "הכפייה בוטלה"
+                                    messageTone = Tone.NEUTRAL
                                     refresh++
                                 }
                             }
                         ) { Text("בטל כפייה") }
                     }
                 }
-                message?.let { InfoText(it) }
+                message?.let { StatusMessage(it, messageTone) }
             }
         }
     }
@@ -372,10 +372,12 @@ fun FrpScreen() {
     val guard = rememberPinGuard()
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var messageTone by remember { mutableStateOf(Tone.NEUTRAL) }
 
     if (confirm) {
         AlertDialog(
             onDismissRequest = { confirm = false },
+            icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
             title = { Text("להפעיל הגנת איפוס יצרן?") },
             text = {
                 Text(
@@ -388,6 +390,7 @@ fun FrpScreen() {
                     confirm = false
                     busy = true
                     message = "שולף את מזהה החשבון..."
+                    messageTone = Tone.NEUTRAL
                     val chosen = email
                     scope.launch {
                         val result = withContext(Dispatchers.IO) {
@@ -405,6 +408,7 @@ fun FrpScreen() {
                             "ERR:SET" -> "ההפעלה נכשלה (דורש Device Owner ואנדרואיד 11+)"
                             else -> "לא הצלחתי לקבל מזהה. ודא שהחשבון מחובר עכשיו בטלפון ושיש אינטרנט"
                         }
+                        messageTone = if (result == "OK") Tone.ALLOWED else Tone.BLOCKED
                         busy = false
                         refresh++
                     }
@@ -416,13 +420,16 @@ fun FrpScreen() {
 
     PageList {
         if (!owner) item { OwnerNotice() }
-        item {
-            GroupCard {
-                Text(
-                    if (frpOn) "✅ מוגן: אחרי איפוס רק ${Protection.frpEmail(ctx) ?: "החשבון שנבחר"} יפתח את המכשיר"
-                    else "אין הגנה",
-                    style = MaterialTheme.typography.titleMedium
-                )
+        inset(title = "הגנת איפוס יצרן") {
+            Column(Modifier.padding(Spacing.l), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                if (frpOn) {
+                    StatusMessage(
+                        "מוגן: אחרי איפוס רק ${Protection.frpEmail(ctx) ?: "החשבון שנבחר"} יפתח את המכשיר",
+                        Tone.ALLOWED
+                    )
+                } else {
+                    Text("אין הגנה", style = MaterialTheme.typography.titleMedium)
+                }
                 InfoText(
                     "אחרי איפוס יצרן (גם דרך Recovery) המכשיר יבקש התחברות עם חשבון גוגל מסוים בלבד. " +
                         "החשבון צריך להיות מחובר עכשיו בטלפון. אם תשכח את הסיסמה שלו, לא תוכל לפתוח את המכשיר אחרי איפוס."
@@ -435,7 +442,7 @@ fun FrpScreen() {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     modifier = Modifier.fillMaxWidth()
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
                     Button(enabled = owner && !busy && email.contains("@"), onClick = { confirm = true }) {
                         Text("הפעל FRP")
                     }
@@ -446,6 +453,7 @@ fun FrpScreen() {
                                 guard {
                                     Protection.setFrp(ctx, null, null)
                                     message = "ה-FRP בוטל"
+                                    messageTone = Tone.NEUTRAL
                                     refresh++
                                 }
                             }
@@ -453,7 +461,7 @@ fun FrpScreen() {
                     }
                 }
                 if (android.os.Build.VERSION.SDK_INT < 30) InfoText("דורש אנדרואיד 11 ומעלה")
-                message?.let { InfoText(it) }
+                message?.let { StatusMessage(it, messageTone) }
             }
         }
     }

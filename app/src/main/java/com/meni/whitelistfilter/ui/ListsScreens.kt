@@ -5,11 +5,14 @@ package com.meni.whitelistfilter.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.meni.whitelistfilter.FilterState
 import com.meni.whitelistfilter.Rules
@@ -28,15 +31,17 @@ fun DomainsScreen() {
 
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            start = Spacing.l, top = Spacing.m, end = Spacing.l, bottom = Spacing.xxl
+        ),
+        verticalArrangement = Arrangement.spacedBy(Spacing.s)
     ) {
         item { SearchField(query, { query = it }, "חיפוש דומיין", Modifier.fillMaxWidth()) }
 
         if (searching && white.isEmpty() && black.isEmpty()) {
             item {
                 EmptyState(
-                    icon = "🔍",
+                    icon = Icons.Filled.Search,
                     title = "לא נמצאו דומיינים",
                     message = "אין דומיין שמכיל \"$query\" באף אחת מהרשימות.",
                     modifier = Modifier.height(320.dp),
@@ -45,40 +50,48 @@ fun DomainsScreen() {
                 )
             }
         } else {
+            // ----- רשימה לבנה כללית -----
             item {
-                SectionTitle(
-                    if (searching) "רשימה כללית (${white.size} מתוך ${rules.global.size})"
-                    else "רשימה כללית (${rules.global.size})"
-                )
+                Column {
+                    SectionTitle(
+                        if (searching) "רשימה כללית (${white.size} מתוך ${rules.global.size})"
+                        else "רשימה כללית (${rules.global.size})"
+                    )
+                    InfoText(
+                        "דומיינים שמותרים לכל האפליקציות שבמצב רשימה לבנה. תת-דומיינים נכללים אוטומטית.",
+                        Modifier.padding(start = Spacing.l, end = Spacing.l, bottom = Spacing.s)
+                    )
+                    GroupCard { DomainInput { Rules.addGlobal(it) } }
+                }
             }
-            item {
-                InfoText("דומיינים שמותרים לכל האפליקציות שבמצב רשימה לבנה. תת-דומיינים נכללים אוטומטית.")
-            }
-            item { DomainInput { Rules.addGlobal(it) } }
-            if (white.isEmpty()) item { InfoText("אין דומיינים ברשימה") }
+            if (white.isEmpty()) item { InfoText("אין דומיינים ברשימה", Modifier.padding(horizontal = Spacing.l)) }
             items(white, key = { it }) { d -> DomainCard(d) { Rules.removeGlobal(d) } }
 
-            item { Spacer(Modifier.height(8.dp)) }
+            // ----- רשימה שחורה כללית -----
             item {
-                SectionTitle(
-                    if (searching) "רשימה שחורה כללית (${black.size} מתוך ${rules.globalBlack.size})"
-                    else "רשימה שחורה כללית (${rules.globalBlack.size})"
-                )
+                Column {
+                    SectionTitle(
+                        if (searching) "רשימה שחורה כללית (${black.size} מתוך ${rules.globalBlack.size})"
+                        else "רשימה שחורה כללית (${rules.globalBlack.size})"
+                    )
+                    InfoText(
+                        "דומיינים שנחסמים לכל האפליקציות שבמצב רשימה שחורה. תת-דומיינים נכללים אוטומטית.",
+                        Modifier.padding(start = Spacing.l, end = Spacing.l, bottom = Spacing.s)
+                    )
+                    GroupCard { DomainInput { Rules.addGlobalBlack(it) } }
+                }
             }
-            item {
-                InfoText("דומיינים שנחסמים לכל האפליקציות שבמצב רשימה שחורה. תת-דומיינים נכללים אוטומטית.")
-            }
-            item { DomainInput { Rules.addGlobalBlack(it) } }
-            if (black.isEmpty()) item { InfoText("אין דומיינים ברשימה") }
+            if (black.isEmpty()) item { InfoText("אין דומיינים ברשימה", Modifier.padding(horizontal = Spacing.l)) }
             items(black, key = { "black_$it" }) { d -> DomainCard(d) { Rules.removeGlobalBlack(d) } }
         }
     }
 }
 
+/** שורת דומיין ברשימה: שם הדומיין וכפתור הסרה מסומן */
 @Composable
 private fun DomainCard(domain: String, onRemove: () -> Unit) {
-    AppCard {
-        Box(Modifier.padding(start = 16.dp, end = 8.dp, top = 2.dp, bottom = 2.dp)) {
+    ListCard {
+        Box(Modifier.padding(horizontal = Spacing.s)) {
             DomainRow(domain, "הסר", onRemove)
         }
     }
@@ -99,28 +112,29 @@ fun LogScreen() {
     Column(Modifier.fillMaxSize()) {
         if (log.isEmpty()) {
             EmptyState(
-                icon = "🛡️",
+                icon = AppIcons.Journal,
                 title = "אין חסימות עדיין",
                 message = "כשאפליקציה תנסה להגיע לדומיין חסום, הוא יופיע כאן ותוכל לאשר אותו."
             )
         } else {
             SearchField(
                 query, { query = it }, "חיפוש לפי אפליקציה או דומיין",
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp)
+                Modifier.fillMaxWidth().padding(horizontal = Spacing.l).padding(top = Spacing.m)
             )
             ResultsHeader(
                 shown = visible.size,
                 total = log.size,
                 unit = "חסימות",
                 hasFilters = q.isNotEmpty(),
-                onReset = { query = "" }
+                onReset = { query = "" },
+                modifier = Modifier.padding(top = Spacing.s)
             ) {
                 TextButton(onClick = { FilterState.clearLog() }) { Text("נקה יומן") }
             }
 
             if (visible.isEmpty()) {
                 EmptyState(
-                    icon = "🔍",
+                    icon = Icons.Filled.Search,
                     title = "לא נמצאו חסימות",
                     message = "נסה חיפוש אחר.",
                     actionLabel = "נקה חיפוש",
@@ -129,21 +143,25 @@ fun LogScreen() {
             } else {
                 LazyColumn(
                     Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        start = Spacing.l, top = Spacing.s, end = Spacing.l, bottom = Spacing.xxl
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.s)
                 ) {
                     items(visible, key = { "${it.pkg}|${it.target}" }) { e ->
                         val approvedGlobal = e.isDomain && e.target in rules.global
                         val approvedApp =
                             e.isDomain && e.pkg != null && e.target in (rules.apps[e.pkg]?.domains ?: emptySet())
-                        AppCard {
-                            Column(Modifier.padding(14.dp)) {
+                        ListCard {
+                            Column(Modifier.padding(horizontal = Spacing.l, vertical = Spacing.m)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     AppIcon(e.pkg, 28.dp)
-                                    Spacer(Modifier.width(8.dp))
+                                    Spacer(Modifier.width(Spacing.s))
                                     Text(
                                         e.label,
                                         style = MaterialTheme.typography.titleSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f)
                                     )
                                     InfoText(fmt.format(Date(e.time)))
@@ -151,11 +169,10 @@ fun LogScreen() {
                                 Text(
                                     e.target,
                                     style = MaterialTheme.typography.bodyLarge,
-                                    modifier = Modifier.padding(top = 4.dp)
+                                    modifier = Modifier.padding(top = Spacing.xs)
                                 )
                                 when {
-                                    approvedGlobal || approvedApp ->
-                                        Text("✅ אושר", style = MaterialTheme.typography.bodySmall)
+                                    approvedGlobal || approvedApp -> StatusMessage("אושר", Tone.ALLOWED)
                                     e.isDomain -> Row {
                                         TextButton(onClick = { Rules.addGlobal(e.target) }) { Text("אשר לכולם") }
                                         if (e.pkg != null) {
