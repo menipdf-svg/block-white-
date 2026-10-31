@@ -38,6 +38,25 @@ internal fun ShizukuSection(onDone: () -> Unit) {
         style = MaterialTheme.typography.bodySmall
     )
     Row {
+        if (!installed) {
+            TextButton(onClick = {
+                // קודם גוגל פליי, ואם אין אפליקציית חנות פותחים את דף ההורדות ב-GitHub
+                val play = Intent(
+                    Intent.ACTION_VIEW,
+                    android.net.Uri.parse("market://details?id=${ShizukuOwner.SHIZUKU_PACKAGE}")
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                try {
+                    ctx.startActivity(play)
+                } catch (_: Exception) {
+                    ctx.startActivity(
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://github.com/RikkaApps/Shizuku/releases/latest")
+                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            }) { Text("הורד את Shizuku") }
+        }
         if (installed && !running) {
             TextButton(onClick = {
                 ctx.packageManager.getLaunchIntentForPackage(ShizukuOwner.SHIZUKU_PACKAGE)
