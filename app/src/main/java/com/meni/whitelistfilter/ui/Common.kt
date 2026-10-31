@@ -3,6 +3,9 @@
 package com.meni.whitelistfilter.ui
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -71,7 +74,80 @@ fun DomainRow(domain: String, action: String, onAction: () -> Unit) {
 
 @Composable
 fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 12.dp))
+    Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 12.dp)
+    )
+}
+
+/** רשימה אחידה לדפי הגדרות: אותם שוליים ואותם רווחים בכל מקום */
+@Composable
+fun PageList(content: LazyListScope.() -> Unit) {
+    LazyColumn(
+        Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+        content = content
+    )
+}
+
+/** כרטיס עם ריפוד ורווחים אחידים */
+@Composable
+fun GroupCard(content: @Composable ColumnScope.() -> Unit) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+    }
+}
+
+/** טקסט הסבר קטן */
+@Composable
+fun InfoText(text: String) {
+    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+/** שורה עם כותרת, הסבר ומתג */
+@Composable
+fun SwitchRow(
+    title: String,
+    desc: String?,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onChange: (Boolean) -> Unit
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            if (desc != null) InfoText(desc)
+        }
+        Switch(checked = checked, enabled = enabled, onCheckedChange = onChange)
+    }
+}
+
+/** שורת ניווט בתפריט ההגדרות */
+@Composable
+fun NavRow(icon: String, title: String, desc: String, onClick: () -> Unit) {
+    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(icon, style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+                InfoText(desc)
+            }
+            Text("←", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** הודעה שמופיעה בדפים שדורשים Device Owner כשהוא לא מוגדר */
+@Composable
+fun OwnerNotice() {
+    GroupCard {
+        Text("⚠️ דורש Device Owner", style = MaterialTheme.typography.titleSmall)
+        InfoText("האפליקציה עדיין לא מוגדרת כ-Device Owner, ולכן המתגים כאן כבויים. ההגדרה נמצאת ב: הגדרות ← הגנה מפני עקיפה.")
+    }
 }
 
 @Composable

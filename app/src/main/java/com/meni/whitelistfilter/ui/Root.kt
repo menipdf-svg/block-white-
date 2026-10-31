@@ -15,6 +15,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.meni.whitelistfilter.Pin
+import com.meni.whitelistfilter.Rules
 
 @Composable
 fun Root(onStart: () -> Unit, onStop: () -> Unit) {
@@ -25,49 +26,71 @@ fun Root(onStart: () -> Unit, onStop: () -> Unit) {
         return
     }
 
-    var settings by rememberSaveable { mutableStateOf(false) }
-    BackHandler(enabled = settings) { settings = false }
-
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var openApp by rememberSaveable { mutableStateOf<String?>(null) }
-    val tabs = listOf("🛡️" to "סטטוס", "📱" to "אפליקציות", "🌐" to "דומיינים", "🖼️" to "תמונות", "📦" to "התקנות", "📋" to "יומן")
+    var settingsName by rememberSaveable { mutableStateOf<String?>(null) }
+    val settings = settingsName?.let { n -> SettingsPage.entries.firstOrNull { it.name == n } }
+    val app = openApp
+    val tabs = listOf("🛡️" to "סטטוס", "📱" to "אפליקציות", "🌐" to "דומיינים", "📋" to "יומן")
+
+    val inSub = app != null || settings != null
+    val goBack = {
+        when {
+            app != null -> openApp = null
+            settings != null && settings != SettingsPage.HUB -> settingsName = SettingsPage.HUB.name
+            else -> settingsName = null
+        }
+    }
+    BackHandler(enabled = inSub) { goBack() }
+
+    val title = when {
+        settings != null -> settings.title
+        app != null -> Rules.labelForPackage(app)
+        else -> tabs[tab].second
+    }
 
     Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title, maxLines = 1) },
+                navigationIcon = {
+                    if (inSub) IconButton(onClick = { goBack() }) { Text("→", style = MaterialTheme.typography.titleLarge) }
+                },
+                actions = {
+                    if (settings == null) {
+                        IconButton(onClick = {
+                            openApp = null
+                            settingsName = SettingsPage.HUB.name
+                        }) { Text("⚙️", style = MaterialTheme.typography.titleLarge) }
+                    }
+                }
+            )
+        },
         bottomBar = {
             NavigationBar {
-                tabs.forEachIndexed { i, (icon, title) ->
+                tabs.forEachIndexed { i, (icon, label) ->
                     NavigationBarItem(
-                        selected = tab == i,
+                        selected = settings == null && tab == i,
                         onClick = {
                             tab = i
                             openApp = null
-                            settings = false
+                            settingsName = null
                         },
                         icon = { Text(icon) },
-                        label = { Text(title) }
+                        label = { Text(label, maxLines = 1) }
                     )
                 }
             }
         }
     ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize().imePadding()) {
-            if (!settings) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { settings = true }) { Text("⚙️ הגדרות") }
-                }
-            }
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                val app = openApp
-                when {
-                    settings -> SettingsScreen(onBack = { settings = false })
-                    app != null -> AppDetailScreen(app, onBack = { openApp = null })
-                    tab == 0 -> StatusScreen(onStart, onStop)
-                    tab == 1 -> AppsScreen(onOpen = { openApp = it })
-                    tab == 2 -> DomainsScreen()
-                    tab == 3 -> ImagesScreen()
-                    tab == 4 -> InstallsScreen()
-                    else -> LogScreen()
-                }
+        Box(Modifier.padding(pad).fillMaxSize().imePadding()) {
+            when {
+                settings != null -> SettingsRoot(settings, go = { settingsName = it.name }, onStart = onStart)
+                app != null -> AppDetailScreen(app, onBack = { openApp = null })
+                tab == 0 -> StatusScreen(onStart, onStop, onOpenSettings = { settingsName = it.name })
+                tab == 1 -> AppsScreen(onOpen = { openApp = it })
+                tab == 2 -> DomainsScreen()
+                else -> LogScreen()
             }
         }
     }

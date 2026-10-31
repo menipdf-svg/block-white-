@@ -2,11 +2,13 @@
 
 package com.meni.whitelistfilter.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -33,29 +35,16 @@ fun InstallsScreen() {
     val held = remember(version) { InstallSettings.held(ctx) }
     val pendingCount = remember(version) { InstallSettings.pending(ctx).size }
     val allGames = PlayCategories.ALL_GAMES in blocked
+    var showApps by rememberSaveable { mutableStateOf(false) }
+    var showGames by rememberSaveable { mutableStateOf(false) }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        item {
-            Text(
-                "חסימת התקנות לפי קטגוריה",
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.padding(top = 16.dp)
-            )
-        }
+        item { Spacer(Modifier.height(4.dp)) }
 
-        if (!owner) {
-            item {
-                Card(Modifier.fillMaxWidth()) {
-                    Text(
-                        "הפיצ'ר הזה עובד רק כשהאפליקציה מוגדרת כ-Device Owner. אפשר להגדיר בלשונית \"סטטוס\".",
-                        modifier = Modifier.padding(16.dp)
-                    )
-                }
-            }
-        }
+        if (!owner) item { OwnerNotice() }
 
         // ----- הפעלה -----
         item {
@@ -121,10 +110,13 @@ fun InstallsScreen() {
         item { SectionTitle("קטגוריות לחסימה") }
         items(PlayCategories.special, key = { it.id }) { c -> CategoryRow(c, blocked, allGames, version) }
 
-        item { SectionTitle("אפליקציות") }
-        items(PlayCategories.apps, key = { it.id }) { c -> CategoryRow(c, blocked, allGames, version) }
+        item {
+            CollapseHeader("קטגוריות אפליקציות", PlayCategories.apps.count { it.id in blocked }, showApps) {
+                showApps = !showApps
+            }
+        }
+        if (showApps) items(PlayCategories.apps, key = { it.id }) { c -> CategoryRow(c, blocked, allGames, version) }
 
-        item { SectionTitle("משחקים") }
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -137,7 +129,14 @@ fun InstallsScreen() {
                 })
             }
         }
-        items(PlayCategories.games, key = { it.id }) { c -> CategoryRow(c, blocked, allGames, version) }
+        item {
+            CollapseHeader(
+                "קטגוריות משחקים",
+                if (allGames) PlayCategories.games.size else PlayCategories.games.count { it.id in blocked },
+                showGames
+            ) { showGames = !showGames }
+        }
+        if (showGames) items(PlayCategories.games, key = { it.id }) { c -> CategoryRow(c, blocked, allGames, version) }
 
         // ----- יומן -----
         if (events.isNotEmpty()) {
@@ -159,6 +158,20 @@ fun InstallsScreen() {
         }
 
         item { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+/** כותרת שנפתחת ונסגרת, עם מספר הקטגוריות שחסומות בתוכה */
+@Composable
+private fun CollapseHeader(title: String, blockedCount: Int, open: Boolean, onToggle: () -> Unit) {
+    Card(Modifier.fillMaxWidth().clickable(onClick = onToggle)) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+                InfoText(if (blockedCount == 0) "אין חסימות" else "$blockedCount חסומות")
+            }
+            Text(if (open) "▲" else "▼")
+        }
     }
 }
 

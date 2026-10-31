@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.UserManager
+import android.provider.Settings
 import java.security.MessageDigest
 
 class AdminReceiver : DeviceAdminReceiver()
@@ -88,12 +89,26 @@ object Protection {
                 else -> {
                     val r = restriction(lock)!!
                     if (on) d.addUserRestriction(a, r) else d.clearUserRestriction(a, r)
+                    if (lock == Lock.NO_DEBUGGING && on) disableAdb(ctx)
                     if (lock == Lock.NO_PRIVATE_DNS && on && forcedDnsHost(ctx) == null) d.setGlobalPrivateDnsModeOpportunistic(a)
                 }
             }
             true
         } catch (_: Exception) {
             false
+        }
+    }
+
+    /** מכבה ניפוי באגים ואפשרויות מפתח מיד (ההגבלה עצמה מונעת להפעיל אותם שוב) */
+    @Suppress("DEPRECATION")
+    private fun disableAdb(ctx: Context) {
+        val d = dpm(ctx)
+        val a = admin(ctx)
+        for (key in listOf(Settings.Global.ADB_ENABLED, Settings.Global.DEVELOPMENT_SETTINGS_ENABLED)) {
+            try {
+                d.setGlobalSetting(a, key, "0")
+            } catch (_: Exception) {
+            }
         }
     }
 

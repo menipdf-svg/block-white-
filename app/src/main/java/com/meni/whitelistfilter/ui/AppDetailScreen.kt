@@ -53,7 +53,6 @@ private fun statusOf(e: RequestEntry, pkg: String, data: RulesData): Status {
 
 @Composable
 fun AppDetailScreen(pkg: String, onBack: () -> Unit) {
-    BackHandler { onBack() }
     val label = remember(pkg) { Rules.labelForPackage(pkg) }
     val rules by Rules.data.collectAsState()
     val running by FilterState.running.collectAsState()
@@ -77,9 +76,8 @@ fun AppDetailScreen(pkg: String, onBack: () -> Unit) {
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        item { TextButton(onClick = onBack, modifier = Modifier.padding(top = 8.dp)) { Text("→ חזרה") } }
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 AppIcon(pkg, 56.dp)
                 Spacer(Modifier.width(12.dp))
                 Column {
@@ -254,7 +252,7 @@ private fun ProtectCard(pkg: String) {
                 Text("מניעת הסרה ומחיקת נתונים", style = MaterialTheme.typography.titleMedium)
                 Text(
                     if (owner) "אי אפשר להסיר את האפליקציה, לעצור אותה או למחוק את הנתונים שלה"
-                    else "דורש הרשאת Device Owner (במסך הסטטוס)",
+                    else "דורש Device Owner (הגדרות ← הגנה מפני עקיפה)",
                     style = MaterialTheme.typography.bodySmall
                 )
             }

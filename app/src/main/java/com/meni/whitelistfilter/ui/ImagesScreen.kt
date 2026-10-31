@@ -69,13 +69,9 @@ fun ImagesScreen() {
     ) {
         item {
             Text(
-                "סינון תמונות",
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.padding(top = 16.dp)
-            )
-            Text(
                 "בפיירפוקס המסונן כל תמונה נבדקת במודל AI שרץ על המכשיר עצמו, ומה שבחרת מוחלף במשטח אפור לפני שהוא מוצג. שום תמונה לא נשלחת לשרת.",
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 12.dp)
             )
         }
 

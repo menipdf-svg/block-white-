@@ -28,12 +28,12 @@ private fun megabytes(bytes: Long): String =
     String.format(Locale.US, "%.1f MB", bytes / 1_000_000.0)
 
 @Composable
-fun StatusScreen(onStart: () -> Unit, onStop: () -> Unit) {
+fun StatusScreen(onStart: () -> Unit, onStop: () -> Unit, onOpenSettings: (SettingsPage) -> Unit) {
     val ctx = LocalContext.current
     val running by FilterState.running.collectAsState()
-    var refresh by remember { mutableIntStateOf(0) }
-    val owner = remember(refresh) { Protection.isOwner(ctx) }
-    val alwaysOn = remember(refresh) { Protection.isOn(ctx, Lock.ALWAYS_ON_VPN) }
+    val owner = remember(running) { Protection.isOwner(ctx) }
+    val alwaysOn = remember(running) { Protection.isOn(ctx, Lock.ALWAYS_ON_VPN) }
+    val lockCount = remember(running) { Lock.entries.count { Protection.isOn(ctx, it) } }
     var traffic by remember { mutableStateOf<LongArray?>(null) }
     LaunchedEffect(running) {
         while (running) {
@@ -43,38 +43,19 @@ fun StatusScreen(onStart: () -> Unit, onStop: () -> Unit) {
         traffic = null
     }
 
-    LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        item {
-            Text(
-                "מסנן רשימה לבנה",
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.padding(top = 16.dp)
-            )
-        }
-
+    PageList {
         // ----- מצב הסינון -----
         item {
-            Card(Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            GroupCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(
                             if (running) "✅ הסינון פעיל" else "⛔ הסינון כבוי",
                             style = MaterialTheme.typography.titleMedium
                         )
-                        Text(
-                            "VPN מקומי — כל התעבורה עוברת רק דרך המכשיר",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        traffic?.let {
-                            Text(
-                                "↑ ${megabytes(it[0])}   ↓ ${megabytes(it[1])}",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                        if (alwaysOn) Text("נעול: עולה אוטומטית", style = MaterialTheme.typography.bodySmall)
+                        InfoText("VPN מקומי — כל התעבורה עוברת רק דרך המכשיר")
+                        traffic?.let { InfoText("↑ ${megabytes(it[0])}   ↓ ${megabytes(it[1])}") }
+                        if (alwaysOn) InfoText("נעול: עולה אוטומטית")
                     }
                     if (!running) Button(onClick = onStart) { Text("הפעל") }
                     else if (!alwaysOn) OutlinedButton(onClick = onStop) { Text("עצור") }
@@ -82,49 +63,27 @@ fun StatusScreen(onStart: () -> Unit, onStop: () -> Unit) {
             }
         }
 
-        // ----- Device Owner -----
-        item { SectionTitle("הגנה מפני עקיפה") }
-        if (!owner) {
-            item { OwnerSetupCard { refresh++ } }
-        } else {
-            item {
-                Text(
-                    "✅ האפליקציה מוגדרת כ-Device Owner",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-            items(Lock.entries.size) { i ->
-                val lock = Lock.entries[i]
-                var on by remember(refresh) { mutableStateOf(Protection.isOn(ctx, lock)) }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(lock.title, style = MaterialTheme.typography.bodyLarge)
-                        Text(lock.desc, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Switch(checked = on, onCheckedChange = {
-                        if (lock == Lock.ALWAYS_ON_VPN && it && !running) onStart()
-                        Protection.set(ctx, lock, it)
-                        on = Protection.isOn(ctx, lock)
-                        refresh++
-                    })
+        // ----- סיכום ההגנה -----
+        item {
+            GroupCard {
+                if (owner) {
+                    Text("🛡️ ההגנה פעילה", style = MaterialTheme.typography.titleMedium)
+                    InfoText("$lockCount מתוך ${Lock.entries.size} נעילות מערכת פעילות")
+                    OutlinedButton(onClick = { onOpenSettings(SettingsPage.PROTECTION) }) { Text("ניהול ההגנה") }
+                } else {
+                    Text("⚠️ ההגנה לא פעילה", style = MaterialTheme.typography.titleMedium)
+                    InfoText(
+                        "כדי שלא יהיה אפשר לכבות או להסיר את המסנן, צריך להגדיר אותו כ-Device Owner."
+                    )
+                    Button(onClick = { onOpenSettings(SettingsPage.PROTECTION) }) { Text("איך מגדירים") }
                 }
             }
         }
-
-        // ----- קוד -----
-        item { SectionTitle("קוד נעילה") }
-        item { PinCard() }
-
-        if (owner) {
-            item { SectionTitle("ביטול ההגנה") }
-            item { RemoveOwnerCard { refresh++ } }
-        }
-        item { Spacer(Modifier.height(24.dp)) }
     }
 }
 
 @Composable
-private fun OwnerSetupCard(onRefresh: () -> Unit) {
+internal fun OwnerSetupCard(onRefresh: () -> Unit) {
     val ctx = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val cmd = Protection.adbCommand(ctx)
@@ -157,7 +116,7 @@ private fun SelectionText(text: String) {
 }
 
 @Composable
-private fun PinCard() {
+internal fun PinCard() {
     val ctx = LocalContext.current
     var isSet by remember { mutableStateOf(Pin.isSet(ctx)) }
     var pin by remember { mutableStateOf("") }
@@ -200,7 +159,7 @@ private fun PinCard() {
 }
 
 @Composable
-private fun RemoveOwnerCard(onDone: () -> Unit) {
+internal fun RemoveOwnerCard(onDone: () -> Unit) {
     val ctx = LocalContext.current
     var confirm by remember { mutableStateOf(false) }
     Card(Modifier.fillMaxWidth()) {
