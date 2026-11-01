@@ -30,16 +30,24 @@ data class AppItem(val pkg: String, val label: String, val system: Boolean)
 @Suppress("DEPRECATION")
 fun loadApps(ctx: Context): List<AppItem> {
     val pm = ctx.packageManager
-    return pm.getInstalledPackages(PackageManager.GET_PERMISSIONS).mapNotNull { pi ->
+    val blocked = Protection.blockedApps(ctx)
+    // MATCH_UNINSTALLED_PACKAGES כדי שגם אפליקציות מוסתרות יופיעו וניתן יהיה לשחרר אותן
+    val flags = PackageManager.GET_PERMISSIONS or PackageManager.MATCH_UNINSTALLED_PACKAGES
+    val found = pm.getInstalledPackages(flags).mapNotNull { pi ->
         val ai = pi.applicationInfo ?: return@mapNotNull null
         if (pi.packageName == ctx.packageName) return@mapNotNull null
-        if (pi.requestedPermissions?.contains(Manifest.permission.INTERNET) != true) return@mapNotNull null
+        val hidden = pi.packageName in blocked
+        val installed = (ai.flags and ApplicationInfo.FLAG_INSTALLED) != 0
+        if (!installed && !hidden) return@mapNotNull null
+        if (!hidden && pi.requestedPermissions?.contains(Manifest.permission.INTERNET) != true) return@mapNotNull null
         AppItem(
             pi.packageName,
             ai.loadLabel(pm).toString(),
             (ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0
         )
-    }.sortedBy { it.label.lowercase() }
+    }
+    val missing = blocked.filter { b -> found.none { it.pkg == b } }.map { AppItem(it, it, false) }
+    return (found + missing).sortedBy { it.label.lowercase() }
 }
 
 @Composable
@@ -149,33 +157,33 @@ fun AppsScreen(onOpen: (String) -> Unit) {
                                 ModeBadge(rule.mode, rule.domains.size)
                             }
                             // חסימה ישירה של האפליקציה עצמה (הקפאה), בלי קשר לאינטרנט
-                            val suspended = remember(suspTick) { Protection.isAppSuspended(ctx, app.pkg) }
+                            val suspended = remember(suspTick) { Protection.isAppBlocked(ctx, app.pkg) }
                             Row(
                                 Modifier.padding(horizontal = Spacing.l).padding(bottom = Spacing.s),
                                 horizontalArrangement = Arrangement.spacedBy(Spacing.s)
                             ) {
                                 OutlinedButton(
                                     onClick = {
-                                        val ok = Protection.setAppSuspended(ctx, app.pkg, true)
+                                        val ok = Protection.setAppBlocked(ctx, app.pkg, true)
                                         suspTick++
                                         if (!ok) Toast.makeText(ctx, "לא ניתן לחסום את האפליקציה הזו", Toast.LENGTH_SHORT).show()
                                     },
                                     enabled = owner && !suspended,
                                     modifier = Modifier.weight(1f)
-                                ) { Text("חסום אפליקציה") }
+                                ) { Text("חסום והסתר") }
                                 OutlinedButton(
                                     onClick = {
                                         guard {
-                                            Protection.setAppSuspended(ctx, app.pkg, false)
+                                            Protection.setAppBlocked(ctx, app.pkg, false)
                                             suspTick++
                                         }
                                     },
                                     enabled = owner && suspended,
                                     modifier = Modifier.weight(1f)
-                                ) { Text("פתח אפליקציה") }
+                                ) { Text("פתח והצג") }
                             }
                             if (suspended) {
-                                InfoText("האפליקציה חסומה ולא ניתן להפעיל אותה", Modifier.padding(horizontal = Spacing.l).padding(bottom = Spacing.s))
+                                InfoText("האפליקציה חסומה ומוסתרת מהטלפון", Modifier.padding(horizontal = Spacing.l).padding(bottom = Spacing.s))
                             }
                         }
                     }

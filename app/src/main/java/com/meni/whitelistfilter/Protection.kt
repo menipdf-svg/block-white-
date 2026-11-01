@@ -48,18 +48,59 @@ object Protection {
 
     fun isOwner(ctx: Context): Boolean = dpm(ctx).isDeviceOwnerApp(ctx.packageName)
 
-    /** האם האפליקציה מוקפאת (לא ניתן להפעיל אותה) */
-    fun isAppSuspended(ctx: Context, pkg: String): Boolean = try {
-        dpm(ctx).isPackageSuspended(admin(ctx), pkg)
+    private const val BLOCKED_PREFS = "blocked_apps"
+
+    /** אפליקציות שהאפליקציה הזו חסמה והסתירה. נשמר גם כאן כדי שאפשר יהיה להציג ולשחרר אותן */
+    fun blockedApps(ctx: Context): Set<String> =
+        ctx.getSharedPreferences(BLOCKED_PREFS, Context.MODE_PRIVATE).getStringSet("pkgs", emptySet()) ?: emptySet()
+
+    private fun saveBlocked(ctx: Context, pkgs: Set<String>) {
+        ctx.getSharedPreferences(BLOCKED_PREFS, Context.MODE_PRIVATE).edit().putStringSet("pkgs", pkgs).apply()
+    }
+
+    /** האם האפליקציה חסומה ומוסתרת כרגע */
+    fun isAppBlocked(ctx: Context, pkg: String): Boolean = try {
+        dpm(ctx).isApplicationHidden(admin(ctx), pkg) || pkg in blockedApps(ctx) && !isInstalledVisible(ctx, pkg)
+    } catch (_: Exception) {
+        pkg in blockedApps(ctx)
+    }
+
+    private fun isInstalledVisible(ctx: Context, pkg: String): Boolean = try {
+        ctx.packageManager.getApplicationInfo(pkg, 0)
+        true
     } catch (_: Exception) {
         false
     }
 
-    /** מקפיא או משחרר אפליקציה, בלי קשר לאינטרנט. דורש Device Owner. מחזיר true אם הצליח */
-    fun setAppSuspended(ctx: Context, pkg: String, suspended: Boolean): Boolean {
+    /** חבילות שאסור להסתיר, כי הטלפון או האפליקציה הזו יפסיקו לעבוד */
+    fun canBlockApp(ctx: Context, pkg: String): Boolean {
         if (pkg == ctx.packageName) return false
+        if (pkg == "com.google.android.gms" || pkg == "com.google.android.gsf" || pkg == "com.android.vending") return false
+        if (pkg.startsWith("com.google.android.webview") || pkg.startsWith("com.google.android.trichromelibrary")) return false
+        val pm = ctx.packageManager
+        val home = pm.queryIntentActivities(
+            android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME), 0
+        ).map { it.activityInfo.packageName }
+        if (pkg in home) return false
+        val system = try {
+            (pm.getApplicationInfo(pkg, 0).flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+        } catch (_: Exception) {
+            false
+        }
+        // אפליקציות המערכת של אנדרואיד עצמו (הגדרות, ממשק, ספקים) לא נוגעים בהן
+        if (system && pkg.startsWith("com.android.")) return false
+        return true
+    }
+
+    /** חוסם ומסתיר אפליקציה (או משחרר). מסתירה לגמרי: לא מופיעה במסך הבית ולא ניתן להפעיל. דורש Device Owner */
+    fun setAppBlocked(ctx: Context, pkg: String, blocked: Boolean): Boolean {
+        if (blocked && !canBlockApp(ctx, pkg)) return false
         return try {
-            dpm(ctx).setPackagesSuspended(admin(ctx), arrayOf(pkg), suspended).isEmpty()
+            val d = dpm(ctx)
+            if (!blocked) d.setPackagesSuspended(admin(ctx), arrayOf(pkg), false)
+            val ok = d.setApplicationHidden(admin(ctx), pkg, blocked)
+            if (ok) saveBlocked(ctx, if (blocked) blockedApps(ctx) + pkg else blockedApps(ctx) - pkg)
+            ok
         } catch (_: Exception) {
             false
         }
