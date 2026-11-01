@@ -143,6 +143,22 @@ fun AppsScreen(onOpen: (String) -> Unit) {
                                 Spacer(Modifier.width(Spacing.s))
                                 ModeBadge(rule.mode, rule.domains.size)
                             }
+                            // פעולות מהירות בלי להיכנס למסך האפליקציה
+                            Row(
+                                Modifier.padding(horizontal = Spacing.l).padding(bottom = Spacing.s),
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.s)
+                            ) {
+                                OutlinedButton(
+                                    onClick = { Rules.setMode(app.pkg, Mode.BLOCK) },
+                                    enabled = rule.mode != Mode.BLOCK,
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("חסום") }
+                                OutlinedButton(
+                                    onClick = { Rules.setMode(app.pkg, Mode.OPEN) },
+                                    enabled = rule.mode != Mode.OPEN,
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("פתח") }
+                            }
                         }
                     }
                 }
