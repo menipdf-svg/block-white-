@@ -48,6 +48,23 @@ object Protection {
 
     fun isOwner(ctx: Context): Boolean = dpm(ctx).isDeviceOwnerApp(ctx.packageName)
 
+    /** האם האפליקציה מוקפאת (לא ניתן להפעיל אותה) */
+    fun isAppSuspended(ctx: Context, pkg: String): Boolean = try {
+        dpm(ctx).isPackageSuspended(admin(ctx), pkg)
+    } catch (_: Exception) {
+        false
+    }
+
+    /** מקפיא או משחרר אפליקציה, בלי קשר לאינטרנט. דורש Device Owner. מחזיר true אם הצליח */
+    fun setAppSuspended(ctx: Context, pkg: String, suspended: Boolean): Boolean {
+        if (pkg == ctx.packageName) return false
+        return try {
+            dpm(ctx).setPackagesSuspended(admin(ctx), arrayOf(pkg), suspended).isEmpty()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun restriction(lock: Lock): String? = when (lock) {
         Lock.NO_VPN_CONFIG -> UserManager.DISALLOW_CONFIG_VPN
         Lock.NO_PRIVATE_DNS -> UserManager.DISALLOW_CONFIG_PRIVATE_DNS

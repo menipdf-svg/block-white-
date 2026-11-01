@@ -6,6 +6,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,6 +20,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.meni.whitelistfilter.AppRule
 import com.meni.whitelistfilter.Mode
+import com.meni.whitelistfilter.Protection
 import com.meni.whitelistfilter.Rules
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -48,6 +50,8 @@ fun AppsScreen(onOpen: (String) -> Unit) {
     var filters by rememberSaveable(stateSaver = AppFilters.Saver) { mutableStateOf(AppFilters()) }
     var showSheet by rememberSaveable { mutableStateOf(false) }
     val rules by Rules.data.collectAsState()
+    var suspTick by remember { mutableIntStateOf(0) }
+    val owner = remember { Protection.isOwner(ctx) }
 
     val list = apps
     if (list == null) {
@@ -144,21 +148,34 @@ fun AppsScreen(onOpen: (String) -> Unit) {
                                 Spacer(Modifier.width(Spacing.s))
                                 ModeBadge(rule.mode, rule.domains.size)
                             }
-                            // פעולות מהירות בלי להיכנס למסך האפליקציה
+                            // חסימה ישירה של האפליקציה עצמה (הקפאה), בלי קשר לאינטרנט
+                            val suspended = remember(suspTick) { Protection.isAppSuspended(ctx, app.pkg) }
                             Row(
                                 Modifier.padding(horizontal = Spacing.l).padding(bottom = Spacing.s),
                                 horizontalArrangement = Arrangement.spacedBy(Spacing.s)
                             ) {
                                 OutlinedButton(
-                                    onClick = { Rules.setMode(app.pkg, Mode.BLOCK) },
-                                    enabled = rule.mode != Mode.BLOCK,
+                                    onClick = {
+                                        val ok = Protection.setAppSuspended(ctx, app.pkg, true)
+                                        suspTick++
+                                        if (!ok) Toast.makeText(ctx, "לא ניתן לחסום את האפליקציה הזו", Toast.LENGTH_SHORT).show()
+                                    },
+                                    enabled = owner && !suspended,
                                     modifier = Modifier.weight(1f)
-                                ) { Text("חסום") }
+                                ) { Text("חסום אפליקציה") }
                                 OutlinedButton(
-                                    onClick = { guard { Rules.setMode(app.pkg, Mode.OPEN) } },
-                                    enabled = rule.mode != Mode.OPEN,
+                                    onClick = {
+                                        guard {
+                                            Protection.setAppSuspended(ctx, app.pkg, false)
+                                            suspTick++
+                                        }
+                                    },
+                                    enabled = owner && suspended,
                                     modifier = Modifier.weight(1f)
-                                ) { Text("פתח") }
+                                ) { Text("פתח אפליקציה") }
+                            }
+                            if (suspended) {
+                                InfoText("האפליקציה חסומה ולא ניתן להפעיל אותה", Modifier.padding(horizontal = Spacing.l).padding(bottom = Spacing.s))
                             }
                         }
                     }
