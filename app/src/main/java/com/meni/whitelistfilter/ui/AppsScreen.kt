@@ -118,6 +118,7 @@ fun AppsScreen(onOpen: (String) -> Unit) {
                 ) {
                     items(visible, key = { it.pkg }) { app ->
                         val rule = rules.apps[app.pkg] ?: AppRule()
+                        val guard = rememberPinGuard()
                         ListCard(onClick = { onOpen(app.pkg) }) {
                             Row(
                                 Modifier.padding(horizontal = Spacing.l, vertical = Spacing.m),
@@ -154,7 +155,7 @@ fun AppsScreen(onOpen: (String) -> Unit) {
                                     modifier = Modifier.weight(1f)
                                 ) { Text("חסום") }
                                 OutlinedButton(
-                                    onClick = { Rules.setMode(app.pkg, Mode.OPEN) },
+                                    onClick = { guard { Rules.setMode(app.pkg, Mode.OPEN) } },
                                     enabled = rule.mode != Mode.OPEN,
                                     modifier = Modifier.weight(1f)
                                 ) { Text("פתח") }
