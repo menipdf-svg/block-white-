@@ -77,7 +77,7 @@ fun StoreScreen() {
 
         if (apps.isEmpty()) {
             item {
-                InfoText("הקטלוג ריק. מוסיפים אפליקציות עם store/add_app.py ודוחפים את catalog.json ל-GitHub.")
+                InfoText("הקטלוג ריק. מוסיפים רשומות לקובץ store/catalog.json ב-GitHub: קישור הורדה (עם SHA-256 או חתימה) או קישור לדף האפליקציה.")
             }
         }
 
@@ -102,7 +102,22 @@ fun StoreScreen() {
                         else -> StatusMessage("מותקנת", Tone.ALLOWED)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
-                        if (installed == null || needsUpdate) {
+                        if (app.url.isEmpty()) {
+                            // רק קישור: פותחים את הדף וההתקנה נעשית שם (המצב "רק מהחנות" מתיר אותה)
+                            if (installed == null) {
+                                Button(onClick = {
+                                    try {
+                                        ctx.startActivity(
+                                            android.content.Intent(
+                                                android.content.Intent.ACTION_VIEW,
+                                                android.net.Uri.parse(app.link)
+                                            ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        )
+                                    } catch (_: Exception) {
+                                    }
+                                }) { Text("פתח את הקישור") }
+                            }
+                        } else if (installed == null || needsUpdate) {
                             Button(
                                 onClick = { StoreInstaller.install(ctx, app) },
                                 enabled = note == null || note.startsWith("נכשל")

@@ -16,8 +16,14 @@ data class StoreApp(
     val name: String,
     val version: String,
     val versionCode: Long,
+    /** קישור הורדה ישיר ל-APK. ריק אם זה רק קישור לדף (link) */
     val url: String,
+    /** SHA-256 של קובץ ה-APK. אופציונלי אם יש cert */
     val sha256: String,
+    /** SHA-256 של תעודת החתימה של האפליקציה. מתאים לקישורים שהקובץ בהם מתעדכן */
+    val cert: String,
+    /** קישור לדף האפליקציה (גוגל פליי, F-Droid…). נפתח בלחיצה, וההתקנה נעשית שם */
+    val link: String,
     val desc: String
 )
 
@@ -52,8 +58,17 @@ object StoreCatalog {
                 val o = arr.getJSONObject(i)
                 val pkg = o.optString("pkg")
                 val url = o.optString("url")
+                val link = o.optString("link")
                 val sha = o.optString("sha256").lowercase()
-                if (pkg.isEmpty() || !url.startsWith("https://") || sha.length != 64) continue
+                val cert = o.optString("cert").lowercase().replace(":", "")
+                if (pkg.isEmpty()) continue
+                // הורדה ישירה חייבת הוכחה: SHA-256 של הקובץ או חתימה של האפליקציה
+                if (url.isNotEmpty()) {
+                    if (!url.startsWith("https://")) continue
+                    if (sha.length != 64 && cert.length != 64) continue
+                } else if (!link.startsWith("http") && !link.startsWith("market://")) {
+                    continue
+                }
                 add(
                     StoreApp(
                         pkg = pkg,
@@ -62,6 +77,8 @@ object StoreCatalog {
                         versionCode = o.optLong("versionCode", 0),
                         url = url,
                         sha256 = sha,
+                        cert = cert,
+                        link = link,
                         desc = o.optString("desc")
                     )
                 )

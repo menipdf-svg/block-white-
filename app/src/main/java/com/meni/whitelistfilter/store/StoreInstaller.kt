@@ -41,17 +41,32 @@ object StoreInstaller {
                 setStatus(app.pkg, "מוריד…")
                 val file = download(c, app)
                 setStatus(app.pkg, "בודק…")
-                val actual = sha256(file)
-                if (!actual.equals(app.sha256, ignoreCase = true)) {
+                if (app.sha256.isNotEmpty() && !sha256(file).equals(app.sha256, ignoreCase = true)) {
                     file.delete()
                     setStatus(app.pkg, "נכשל: הקובץ שהורד לא תואם ל-SHA-256 בקטלוג")
                     return@thread
                 }
-                val info = c.packageManager.getPackageArchiveInfo(file.absolutePath, 0)
+                @Suppress("DEPRECATION")
+                val info = c.packageManager.getPackageArchiveInfo(
+                    file.absolutePath,
+                    PackageManager.GET_SIGNING_CERTIFICATES
+                )
                 if (info == null || info.packageName != app.pkg) {
                     file.delete()
                     setStatus(app.pkg, "נכשל: הקובץ אינו של ${app.pkg}")
                     return@thread
+                }
+                if (app.cert.isNotEmpty()) {
+                    val signers = info.signingInfo?.apkContentsSigners.orEmpty()
+                    val ok = signers.any { sig ->
+                        MessageDigest.getInstance("SHA-256").digest(sig.toByteArray())
+                            .joinToString("") { "%02x".format(it) } == app.cert
+                    }
+                    if (!ok) {
+                        file.delete()
+                        setStatus(app.pkg, "נכשל: החתימה של האפליקציה לא תואמת לקטלוג")
+                        return@thread
+                    }
                 }
                 setStatus(app.pkg, "מתקין…")
                 commit(c, app, file)
