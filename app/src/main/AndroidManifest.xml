@@ -8,6 +8,8 @@
         tools:ignore="QueryAllPackagesPermission" />
     <!-- הסרה שקטה של אפליקציות בקטגוריה חסומה (Device Owner) -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- התקנה שקטה מהחנות הפרטית -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- שליפת מזהה חשבון גוגל להגנת איפוס יצרן (FRP). ההרשאה ניתנת אוטומטית על ידי Device Owner -->
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
 
@@ -36,6 +38,10 @@
             android:exported="true"
             android:multiprocess="false"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <receiver
+            android:name=".store.StoreResultReceiver"
+            android:exported="false" />
 
         <!-- הגדרת Device Owner דרך קוד QR בהפעלה ראשונה (אנדרואיד 10+) -->
         <activity

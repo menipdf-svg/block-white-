@@ -66,6 +66,8 @@ object InstallGuard {
         if (replacing) return // עדכון של אפליקציה קיימת
         val app = ctx.applicationContext
         executor.execute {
+            // מצב "רק מהחנות": חבילה שאינה בקטלוג מוסרת ולא ממשיכים
+            if (com.meni.whitelistfilter.store.StoreGuard.onAdded(app, pkg)) return@execute
             // חסימת VPN פועלת בנפרד מחסימת הקטגוריות
             if (Protection.vpnBlocked(app) && Protection.isVpnApp(app, pkg)) Protection.enforceVpnBlock(app)
             process(app, pkg, 0)
@@ -86,6 +88,7 @@ object InstallGuard {
         val app = ctx.applicationContext
         executor.execute {
             Protection.enforceVpnBlock(app)
+            com.meni.whitelistfilter.store.StoreGuard.sweep(app)
             if (!InstallSettings.enabled(app) || !Protection.isOwner(app)) return@execute
             val pm = app.packageManager
             val since = InstallSettings.enabledAt(app)

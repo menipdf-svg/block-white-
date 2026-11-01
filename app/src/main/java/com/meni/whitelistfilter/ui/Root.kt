@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -39,7 +40,8 @@ private val tabSpecs = listOf(
     TabSpec(AppIcons.Shield, "סטטוס"),
     TabSpec(AppIcons.Apps, "אפליקציות"),
     TabSpec(AppIcons.Globe, "דומיינים"),
-    TabSpec(AppIcons.Journal, "יומן")
+    TabSpec(AppIcons.Journal, "יומן"),
+    TabSpec(Icons.Filled.ShoppingCart, "חנות")
 )
 
 @Composable
@@ -135,7 +137,8 @@ fun Root(onStart: () -> Unit, onStop: () -> Unit) {
                         0 -> StatusScreen(onStart, onStop, onOpenSettings = { settingsName = it.name })
                         1 -> AppsScreen(onOpen = { openApp = it })
                         2 -> DomainsScreen()
-                        else -> LogScreen()
+                        3 -> LogScreen()
+                        else -> StoreScreen()
                     }
                 }
             }
