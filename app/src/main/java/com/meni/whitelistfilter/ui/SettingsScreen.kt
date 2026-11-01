@@ -35,6 +35,7 @@ enum class SettingsPage(val title: String) {
     PIN("קוד נעילה"),
     FRP("הגנת איפוס יצרן"),
     INSTALLS("חסימת התקנות"),
+    MASS_INSTALL("התקנה המונית"),
     NETWORK("VPN ו-DNS"),
     CHROME("כרום"),
     IMAGES("סינון תמונות")
@@ -48,6 +49,7 @@ fun SettingsRoot(page: SettingsPage, go: (SettingsPage) -> Unit, onStart: () -> 
         SettingsPage.PIN -> PinScreen()
         SettingsPage.FRP -> FrpScreen()
         SettingsPage.INSTALLS -> InstallsScreen()
+        SettingsPage.MASS_INSTALL -> MassInstallScreen()
         SettingsPage.NETWORK -> NetworkScreen()
         SettingsPage.CHROME -> ChromeScreen()
         SettingsPage.IMAGES -> ImagesScreen()
@@ -74,6 +76,10 @@ private fun SettingsHub(go: (SettingsPage) -> Unit) {
         inset(title = "אפליקציות והתקנות") {
             NavRow(AppIcons.Apps, "חסימת התקנות", "חסימה לפי קטגוריות ב-Google Play, ודפדפנים") {
                 go(SettingsPage.INSTALLS)
+            }
+            RowDivider()
+            NavRow(AppIcons.Apps, "התקנה המונית", "התקנת רשימת אפליקציות מגוגל פליי או מקישורי APK") {
+                go(SettingsPage.MASS_INSTALL)
             }
         }
 

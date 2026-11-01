@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">מסנן רשימה לבנה</string>
+    <string name="mass_install_service_label">התקנה המונית</string>
+    <string name="mass_install_service_desc">לוחץ על כפתור ההתקנה בדף האפליקציה בגוגל פליי, עבור רשימת האפליקציות שהזנת במסך ההתקנה ההמונית. פועל רק מול גוגל פליי ורק בזמן שהתקנה המונית רצה.</string>
 </resources>
